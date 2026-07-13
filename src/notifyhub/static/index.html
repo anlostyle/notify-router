@@ -2,86 +2,103 @@
 <html lang="zh-CN">
 <head>
   <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width,initial-scale=1">
-  <title>Notify Router</title>
-  <style>
-    :root { color-scheme:dark; font-family:system-ui,sans-serif; background:#0b0d12; color:#edf0f6 }
-    body { max-width:1100px; margin:40px auto; padding:0 20px }
-    h1 { margin-bottom:6px } h2 { margin-top:34px } .muted { color:#9aa3b2 }
-    .cards { display:grid; grid-template-columns:repeat(auto-fit,minmax(180px,1fr)); gap:14px; margin:28px 0 }
-    .card, table, details { background:#151820; border:1px solid #272c38; border-radius:12px }
-    .card { padding:18px } .value { font-size:30px; font-weight:700; margin-top:8px }
-    table { width:100%; border-collapse:collapse; overflow:hidden }
-    th,td { text-align:left; padding:12px; border-bottom:1px solid #272c38; font-size:14px; overflow-wrap:anywhere }
-    th { color:#9aa3b2 } .sent { color:#66d997 } .failed { color:#ff7777 } .retry { color:#f6c76b }
-    details { margin:14px 0; padding:16px } summary { cursor:pointer; font-weight:700 }
-    textarea { width:100%; min-height:320px; box-sizing:border-box; margin:14px 0; padding:12px; resize:vertical; color:#edf0f6; background:#0b0d12; border:1px solid #343b49; border-radius:8px; font:13px ui-monospace,monospace }
-    button,select { padding:9px 14px; color:#edf0f6; background:#2667d8; border:0; border-radius:7px; cursor:pointer }
-    select { background:#252b37; margin:14px 8px 0 0 } .notice { min-height:24px; margin-top:12px; color:#66d997 }
-  </style>
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+  <meta name="theme-color" content="#111827">
+  <title>Notify · 通知管理中心</title>
+  <link rel="stylesheet" href="/static/app.css">
+  <script defer src="/static/app.js"></script>
 </head>
 <body>
-  <h1>Notify Router</h1>
-  <div class="muted">兼容 NotifyHub 数据、接口与插件的通知路由器</div>
-  <div class="cards">
-    <div class="card">通知渠道<div class="value" id="channels">-</div></div>
-    <div class="card">通知通道<div class="value" id="routes">-</div></div>
-    <div class="card">插件<div class="value" id="plugins">-</div></div>
-    <div class="card">版本<div class="value" id="version">-</div></div>
+  <svg class="icon-sprite" aria-hidden="true">
+    <symbol id="i-grid" viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="7" rx="2"/><rect x="14" y="3" width="7" height="7" rx="2"/><rect x="3" y="14" width="7" height="7" rx="2"/><rect x="14" y="14" width="7" height="7" rx="2"/></symbol>
+    <symbol id="i-bell" viewBox="0 0 24 24"><path d="M18 8a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9"/><path d="M10 21h4"/></symbol>
+    <symbol id="i-route" viewBox="0 0 24 24"><circle cx="6" cy="5" r="2"/><circle cx="18" cy="19" r="2"/><path d="M6 7v5a3 3 0 0 0 3 3h6a3 3 0 0 1 3 3"/><path d="M14 5h4v4"/><path d="m18 5-5 5"/></symbol>
+    <symbol id="i-file" viewBox="0 0 24 24"><path d="M6 2h8l4 4v16H6z"/><path d="M14 2v5h5M9 12h6M9 16h6"/></symbol>
+    <symbol id="i-plug" viewBox="0 0 24 24"><path d="m8 12 8-8M14 3l7 7M5 13l6 6M3 21l5-5"/><path d="m12 8 4 4-5 5-4-4z"/></symbol>
+    <symbol id="i-history" viewBox="0 0 24 24"><path d="M3 12a9 9 0 1 0 3-6.7L3 8"/><path d="M3 3v5h5M12 7v5l3 2"/></symbol>
+    <symbol id="i-terminal" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="m7 9 3 3-3 3M13 15h4"/></symbol>
+    <symbol id="i-settings" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.9l.1.1-2.8 2.8-.1-.1a1.7 1.7 0 0 0-1.9-.3 1.7 1.7 0 0 0-1 1.6v.2h-4V21a1.7 1.7 0 0 0-1-1.6 1.7 1.7 0 0 0-1.9.3l-.1.1L4.2 17l.1-.1a1.7 1.7 0 0 0 .3-1.9A1.7 1.7 0 0 0 3 14H2.8v-4H3a1.7 1.7 0 0 0 1.6-1 1.7 1.7 0 0 0-.3-1.9L4.2 7 7 4.2l.1.1A1.7 1.7 0 0 0 9 4.6a1.7 1.7 0 0 0 1-1.6v-.2h4V3a1.7 1.7 0 0 0 1 1.6 1.7 1.7 0 0 0 1.9-.3l.1-.1L19.8 7l-.1.1a1.7 1.7 0 0 0-.3 1.9 1.7 1.7 0 0 0 1.6 1h.2v4H21a1.7 1.7 0 0 0-1.6 1"/></symbol>
+    <symbol id="i-search" viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="m20 20-4-4"/></symbol>
+    <symbol id="i-plus" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></symbol>
+    <symbol id="i-more" viewBox="0 0 24 24"><circle cx="5" cy="12" r="1"/><circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/></symbol>
+    <symbol id="i-edit" viewBox="0 0 24 24"><path d="M4 20h4l11-11-4-4L4 16zM13 7l4 4"/></symbol>
+    <symbol id="i-trash" viewBox="0 0 24 24"><path d="M4 7h16M9 7V4h6v3M7 7l1 14h8l1-14M10 11v6M14 11v6"/></symbol>
+    <symbol id="i-send" viewBox="0 0 24 24"><path d="m22 2-7 20-4-9-9-4zM22 2 11 13"/></symbol>
+    <symbol id="i-copy" viewBox="0 0 24 24"><rect x="8" y="8" width="12" height="12" rx="2"/><path d="M16 8V6a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2h2"/></symbol>
+    <symbol id="i-refresh" viewBox="0 0 24 24"><path d="M20 7v5h-5M4 17v-5h5"/><path d="M6.1 8a7 7 0 0 1 11.6-1L20 12M4 12l2.3 5a7 7 0 0 0 11.6-1"/></symbol>
+    <symbol id="i-menu" viewBox="0 0 24 24"><path d="M4 7h16M4 12h16M4 17h16"/></symbol>
+    <symbol id="i-moon" viewBox="0 0 24 24"><path d="M20 15a8 8 0 0 1-11-11 9 9 0 1 0 11 11"/></symbol>
+    <symbol id="i-sun" viewBox="0 0 24 24"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/></symbol>
+    <symbol id="i-close" viewBox="0 0 24 24"><path d="m6 6 12 12M18 6 6 18"/></symbol>
+    <symbol id="i-chevron" viewBox="0 0 24 24"><path d="m9 18 6-6-6-6"/></symbol>
+    <symbol id="i-check" viewBox="0 0 24 24"><path d="m5 12 4 4L19 6"/></symbol>
+    <symbol id="i-alert" viewBox="0 0 24 24"><path d="M12 3 2 21h20zM12 9v5M12 18h.01"/></symbol>
+    <symbol id="i-logout" viewBox="0 0 24 24"><path d="M10 4H4v16h6M14 8l4 4-4 4M8 12h10"/></symbol>
+  </svg>
+
+  <section id="login-view" class="login-view">
+    <div class="login-art" aria-hidden="true">
+      <div class="login-orb orb-one"></div><div class="login-orb orb-two"></div>
+      <div class="login-message-card card-one"><span class="mini-icon">✓</span><div><strong>投递成功</strong><small>企业微信 · 刚刚</small></div></div>
+      <div class="login-message-card card-two"><span class="mini-icon">↗</span><div><strong>统一通知中心</strong><small>一个入口管理所有消息</small></div></div>
+      <div class="login-brand"><span class="brand-mark">N</span><span>Notify</span></div>
+      <div class="login-copy"><h1>让每一条通知<br>都准确抵达。</h1><p>集中管理通知渠道、路由、模板和投递记录。</p></div>
+    </div>
+    <div class="login-panel">
+      <form id="login-form" class="login-form">
+        <div class="mobile-brand"><span class="brand-mark">N</span><span>Notify</span></div>
+        <p class="eyebrow">欢迎回来</p>
+        <h2>登录管理中心</h2>
+        <p class="form-intro">使用管理员账户继续</p>
+        <label class="field"><span>用户名</span><input name="username" autocomplete="username" value="admin" required></label>
+        <label class="field"><span>密码</span><input name="password" type="password" autocomplete="current-password" required></label>
+        <p id="login-error" class="form-error" role="alert"></p>
+        <button class="button primary wide" type="submit"><span>登录</span><svg><use href="#i-chevron"/></svg></button>
+        <small class="login-footnote">凭据仅用于建立安全会话，不会保存在浏览器存储中。</small>
+      </form>
+    </div>
+  </section>
+
+  <div id="app" class="app" hidden>
+    <div id="mobile-backdrop" class="mobile-backdrop"></div>
+    <aside id="sidebar" class="sidebar">
+      <div class="sidebar-brand"><span class="brand-mark">N</span><span class="brand-name">Notify</span><button class="icon-button sidebar-close" data-action="close-menu" aria-label="关闭菜单"><svg><use href="#i-close"/></svg></button></div>
+      <nav id="nav" class="nav" aria-label="主导航">
+        <p class="nav-label">工作台</p>
+        <a href="#dashboard" data-page="dashboard"><svg><use href="#i-grid"/></svg><span>看板</span></a>
+        <p class="nav-label">通知管理</p>
+        <a href="#channels" data-page="channels"><svg><use href="#i-bell"/></svg><span>通知渠道</span><b id="nav-channels">0</b></a>
+        <a href="#routes" data-page="routes"><svg><use href="#i-route"/></svg><span>通知通道</span><b id="nav-routes">0</b></a>
+        <a href="#templates" data-page="templates"><svg><use href="#i-file"/></svg><span>通知模板</span></a>
+        <a href="#plugins" data-page="plugins"><svg><use href="#i-plug"/></svg><span>插件管理</span><b id="nav-plugins">0</b></a>
+        <p class="nav-label">运行状态</p>
+        <a href="#deliveries" data-page="deliveries"><svg><use href="#i-history"/></svg><span>投递历史</span></a>
+        <a href="#logs" data-page="logs"><svg><use href="#i-terminal"/></svg><span>系统日志</span></a>
+        <a href="#settings" data-page="settings"><svg><use href="#i-settings"/></svg><span>系统设置</span></a>
+      </nav>
+      <div class="sidebar-status"><span class="status-dot"></span><div><strong>服务运行正常</strong><small id="sidebar-version">Notify</small></div></div>
+    </aside>
+
+    <main class="main">
+      <header class="topbar">
+        <button class="icon-button menu-button" data-action="open-menu" aria-label="打开菜单"><svg><use href="#i-menu"/></svg></button>
+        <div class="search"><svg><use href="#i-search"/></svg><input id="global-search" type="search" placeholder="搜索当前页面" aria-label="搜索当前页面"><kbd>⌘ K</kbd></div>
+        <div class="topbar-actions">
+          <span class="service-pill"><i></i><span>服务正常</span></span>
+          <button class="icon-button" data-action="toggle-theme" aria-label="切换主题"><svg><use id="theme-icon" href="#i-moon"/></svg></button>
+          <button class="user-button" data-action="user-menu"><span id="user-avatar">A</span><span class="user-meta"><strong id="username">admin</strong><small>管理员</small></span><svg><use href="#i-chevron"/></svg></button>
+          <div id="user-menu" class="user-menu" hidden><button data-action="logout"><svg><use href="#i-logout"/></svg>退出登录</button></div>
+        </div>
+      </header>
+
+      <div class="content-wrap">
+        <div class="page-header"><div><p id="page-eyebrow" class="eyebrow"></p><h1 id="page-title"></h1><p id="page-description"></p></div><div id="page-actions" class="page-actions"></div></div>
+        <section id="page-content" class="page-content" aria-live="polite"></section>
+      </div>
+    </main>
   </div>
 
-  <h2>最近投递</h2>
-  <table><thead><tr><th>ID</th><th>通道</th><th>渠道</th><th>状态</th><th>尝试</th><th>错误</th></tr></thead><tbody id="rows"></tbody></table>
-
-  <h2>配置管理</h2>
-  <details><summary>通知渠道与通道</summary><textarea id="config"></textarea><button data-save="config">保存配置</button></details>
-  <details><summary>通知模板</summary><textarea id="templates"></textarea><button data-save="templates">保存模板</button></details>
-  <details><summary>插件配置</summary><select id="plugin-select"></select><textarea id="plugin-config"></textarea><button id="save-plugin">保存插件配置</button></details>
-  <div class="notice" id="notice"></div>
-
-  <script>
-    const get = async url => { const r=await fetch(url); if(!r.ok) throw new Error(await r.text()); return r.json() }
-    const put = async (url,data) => { const r=await fetch(url,{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(data)}); if(!r.ok) throw new Error(await r.text()); return r.json() }
-    const json = value => JSON.stringify(value,null,2)
-    const notice = message => { document.getElementById('notice').textContent=message; setTimeout(()=>document.getElementById('notice').textContent='',3000) }
-    let manifests=[]
-
-    async function load() {
-      const [status,config,templates,plugins]=await Promise.all([
-        get('/api/admin/status'), get('/api/admin/config'), get('/api/admin/templates'), get('/api/admin/plugins')
-      ])
-      for(const k of ['channels','routes','plugins','version']) document.getElementById(k).textContent=status[k]
-      const tbody=document.getElementById('rows'); tbody.replaceChildren()
-      for(const x of status.deliveries) {
-        const tr=document.createElement('tr')
-        for(const value of [x.id,x.route_name,x.channel_name,x.status,x.attempts,x.last_error||'']) {
-          const td=document.createElement('td'); td.textContent=value; if(value===x.status) td.className=x.status; tr.appendChild(td)
-        }
-        tbody.appendChild(tr)
-      }
-      document.getElementById('config').value=json(config)
-      document.getElementById('templates').value=json(templates)
-      manifests=plugins
-      const select=document.getElementById('plugin-select'); select.replaceChildren()
-      for(const plugin of plugins) { const option=document.createElement('option'); option.value=plugin.id; option.textContent=`${plugin.name||plugin.id} (${plugin.id})`; select.appendChild(option) }
-      await loadPlugin()
-    }
-
-    async function loadPlugin() {
-      const id=document.getElementById('plugin-select').value
-      document.getElementById('plugin-config').value=id ? json(await get(`/api/admin/plugins/${encodeURIComponent(id)}/config`)) : '{}'
-    }
-
-    document.querySelectorAll('[data-save]').forEach(button=>button.onclick=async()=>{
-      const name=button.dataset.save
-      try { await put(`/api/admin/${name}`,JSON.parse(document.getElementById(name).value)); notice('保存成功') } catch(e) { notice(`保存失败：${e.message}`) }
-    })
-    document.getElementById('plugin-select').onchange=loadPlugin
-    document.getElementById('save-plugin').onclick=async()=>{
-      const id=document.getElementById('plugin-select').value
-      try { await put(`/api/admin/plugins/${encodeURIComponent(id)}/config`,JSON.parse(document.getElementById('plugin-config').value)); notice('插件配置已保存，重启后加载新设置') } catch(e) { notice(`保存失败：${e.message}`) }
-    }
-    load().catch(e=>notice(`加载失败：${e.message}`))
-  </script>
+  <dialog id="modal" class="modal"><form id="modal-form" method="dialog"><header><div><p id="modal-eyebrow" class="eyebrow"></p><h2 id="modal-title"></h2></div><button type="button" class="icon-button" data-action="close-modal" aria-label="关闭"><svg><use href="#i-close"/></svg></button></header><div id="modal-body" class="modal-body"></div><footer id="modal-footer"><button type="button" class="button secondary" data-action="close-modal">取消</button><button id="modal-submit" type="submit" class="button primary">保存</button></footer></form></dialog>
+  <div id="toasts" class="toasts" aria-live="polite"></div>
 </body>
 </html>

@@ -1,5 +1,6 @@
 import ast
 import json
+import re
 import shutil
 import sqlite3
 import threading
@@ -13,6 +14,17 @@ from jinja2.sandbox import SandboxedEnvironment
 
 
 _jinja = SandboxedEnvironment(autoescape=False)
+
+
+def redact_secret_text(value):
+    text = str(value or "")
+    text = re.sub(r"(?i)(/bot)[^/\s\"']+", rf"\1••••••", text)
+    text = re.sub(
+        r"(?i)(access_token|corpsecret|secret|api_key|apikey|token|password|key)=([^&\s\"']+)",
+        r"\1=••••••",
+        text,
+    )
+    return re.sub(r"(?i)(authorization:\s*bearer\s+)[^\s\"']+", r"\1••••••", text)
 
 def localnow():
     return datetime.now(ZoneInfo("Asia/Shanghai")).replace(tzinfo=None).isoformat(sep=" ", timespec="microseconds")
@@ -313,7 +325,7 @@ class Store:
                     "failed" if final else "retry",
                     attempts,
                     time.time() if final else time.time() + retry_delays[attempts - 1],
-                    str(error)[:2000],
+                    redact_secret_text(error)[:2000],
                     now,
                     item["delivery_id"],
                 ),
@@ -371,15 +383,61 @@ class Store:
         with self.connect() as db:
             return [dict(x) for x in db.execute("SELECT * FROM notify_records ORDER BY id DESC LIMIT ?", (limit,))]
 
-    def delivery_status(self, limit=100):
+    def dashboard_stats(self, days=14):
+        with self.connect() as db:
+            totals = db.execute(
+                "SELECT COALESCE(SUM(success_count), 0), COALESCE(SUM(fail_count), 0) FROM notify_daily_summary"
+            ).fetchone()
+            today = db.execute(
+                "SELECT COALESCE(SUM(success_count), 0), COALESCE(SUM(fail_count), 0) FROM notify_daily_summary WHERE date=?",
+                (localnow()[:10],),
+            ).fetchone()
+            queue = {
+                row["status"]: row["count"]
+                for row in db.execute("SELECT status, COUNT(*) count FROM deliveries GROUP BY status")
+            }
+            trend = [
+                dict(row)
+                for row in db.execute(
+                    """SELECT date, SUM(success_count) success, SUM(fail_count) failed
+                       FROM notify_daily_summary GROUP BY date ORDER BY date DESC LIMIT ?""",
+                    (days,),
+                )
+            ][::-1]
+            latest_channels = [
+                dict(row)
+                for row in db.execute(
+                    """SELECT d.channel_name, d.status, d.last_error, d.updated_at
+                       FROM deliveries d
+                       JOIN (SELECT channel_name, MAX(id) id FROM deliveries GROUP BY channel_name) latest
+                         ON latest.id=d.id
+                       ORDER BY d.channel_name"""
+                )
+            ]
+        success, failed = int(totals[0]), int(totals[1])
+        return {
+            "total": success + failed,
+            "success": success,
+            "failed": failed,
+            "success_rate": round(success * 100 / (success + failed), 1) if success + failed else 100.0,
+            "today": {"success": int(today[0]), "failed": int(today[1])},
+            "queue": queue,
+            "trend": trend,
+            "channel_states": latest_channels,
+        }
+
+    def delivery_status(self, limit=100, status=None):
+        where = "WHERE d.status=?" if status else ""
+        params = (status, limit) if status else (limit,)
         with self.connect() as db:
             return [
-                dict(x)
+                {**dict(x), "last_error": redact_secret_text(x["last_error"])}
                 for x in db.execute(
-                    """SELECT d.*, o.route_id, o.route_name, o.title, o.created_at outbox_created_at
+                    f"""SELECT d.*, o.route_id, o.route_name, o.title, o.content,
+                               o.push_img_url, o.push_link_url, o.created_at outbox_created_at
                        FROM deliveries d JOIN outbox o ON o.id=d.outbox_id
-                       ORDER BY d.id DESC LIMIT ?""",
-                    (limit,),
+                       {where} ORDER BY d.id DESC LIMIT ?""",
+                    params,
                 )
             ]
 

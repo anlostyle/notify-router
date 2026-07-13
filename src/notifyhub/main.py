@@ -1,13 +1,17 @@
 import hmac
 import logging
 import os
+import time
+from base64 import urlsafe_b64decode, urlsafe_b64encode
+from collections import deque
 from contextlib import asynccontextmanager
 from pathlib import Path
 
 import uvicorn
-from fastapi import Body, Depends, FastAPI, Header, HTTPException, Request
+from fastapi import Body, Cookie, Depends, FastAPI, Header, HTTPException, Request, Response
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.security import HTTPBasic, HTTPBasicCredentials
+from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, ValidationError
 
 from . import __version__
@@ -17,12 +21,29 @@ from .controller.server import Server
 from .plugin_loader import PluginLoader
 from .plugins.common import run_after_setup_hooks
 from .service_compat import parse_emby, parse_pve, parse_watchtower
-from .store import Store, enabled
+from .store import Store, enabled, redact_secret_text
 from .worker import DeliveryWorker
 
 
 logging.basicConfig(level=os.environ.get("LOG_LEVEL", "INFO"), format="%(asctime)s %(levelname)s %(name)s %(message)s")
 logger = logging.getLogger("notifyhub")
+LOG_BUFFER = deque(maxlen=500)
+
+
+class MemoryLogHandler(logging.Handler):
+    def emit(self, record):
+        LOG_BUFFER.append(
+            {
+                "time": time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(record.created)),
+                "level": record.levelname,
+                "logger": record.name,
+                "message": redact_secret_text(self.format(record)),
+            }
+        )
+
+
+if not any(isinstance(handler, MemoryLogHandler) for handler in logging.getLogger().handlers):
+    logging.getLogger().addHandler(MemoryLogHandler())
 
 DATA_DIR = Path(os.environ.get("WORKDIR", "/data"))
 os.environ.setdefault("WORKDIR", str(DATA_DIR))
@@ -30,6 +51,8 @@ store = Store(DATA_DIR)
 Server.configure(store)
 worker = DeliveryWorker(store)
 security = HTTPBasic(auto_error=False)
+MASK = "••••••"
+SESSION_COOKIE = "notify_session"
 
 
 @asynccontextmanager
@@ -58,18 +81,108 @@ class NotifyRequest(BaseModel):
     push_link_url: str | None = None
 
 
+class LoginRequest(BaseModel):
+    username: str
+    password: str
+
+
+class TestNotification(BaseModel):
+    title: str = "Notify 测试通知"
+    content: str = "通知渠道连接正常。"
+    push_img_url: str | None = None
+    push_link_url: str | None = None
+
+
 def api_auth(authorization: str | None = Header(default=None)):
     token = os.environ.get("NOTIFY_API_TOKEN", "")
     if token and not hmac.compare_digest(authorization or "", f"Bearer {token}"):
         raise HTTPException(401, "invalid API token")
 
 
-def admin_auth(credentials: HTTPBasicCredentials | None = Depends(security)):
-    username = os.environ.get("NH_USER", "admin")
-    password = os.environ.get("NH_PASSWORD", "")
-    valid = credentials and hmac.compare_digest(credentials.username, username) and hmac.compare_digest(credentials.password, password)
-    if not valid:
-        raise HTTPException(401, "authentication required", headers={"WWW-Authenticate": "Basic"})
+def _valid_admin(username, password):
+    expected_user = os.environ.get("NH_USER", "admin")
+    expected_password = os.environ.get("NH_PASSWORD", "")
+    return hmac.compare_digest(username or "", expected_user) and hmac.compare_digest(password or "", expected_password)
+
+
+def _session_token(username, expires=None):
+    expires = expires or int(time.time()) + 86400 * 30
+    payload = urlsafe_b64encode(f"{username}:{expires}".encode()).decode().rstrip("=")
+    key = os.environ.get("SESSION_SECRET") or os.environ.get("NH_PASSWORD", "")
+    signature = hmac.new(key.encode(), payload.encode(), "sha256").hexdigest()
+    return f"{payload}.{signature}"
+
+
+def _valid_session(token):
+    try:
+        payload, signature = token.split(".", 1)
+        key = os.environ.get("SESSION_SECRET") or os.environ.get("NH_PASSWORD", "")
+        expected = hmac.new(key.encode(), payload.encode(), "sha256").hexdigest()
+        if not key or not hmac.compare_digest(signature, expected):
+            return False
+        raw = urlsafe_b64decode(payload + "=" * (-len(payload) % 4)).decode()
+        username, expires = raw.rsplit(":", 1)
+        return username == os.environ.get("NH_USER", "admin") and int(expires) > time.time()
+    except (AttributeError, ValueError, TypeError):
+        return False
+
+
+def admin_auth(credentials: HTTPBasicCredentials | None = Depends(security), notify_session: str | None = Cookie(default=None)):
+    if _valid_session(notify_session):
+        return
+    if credentials and _valid_admin(credentials.username, credentials.password):
+        return
+    raise HTTPException(401, "authentication required")
+
+
+def _secret_key(key):
+    key = str(key).lower().replace("-", "_")
+    return key in {"key", "authorization", "webhook_url"} or any(
+        part in key for part in ("secret", "token", "password", "api_key", "apikey", "aeskey")
+    )
+
+
+def _redact(value, key=""):
+    if _secret_key(key) and value not in (None, ""):
+        return MASK
+    if isinstance(value, dict):
+        result = {name: _redact(item, name) for name, item in value.items()}
+        channel_type = str(value.get("type") or "").lower()
+        if channel_type in {"webhook", "discord", "dingtalk", "bark"} and isinstance(result.get("config"), dict):
+            for name in {"url", "webhook_url", "push_url"}:
+                if result["config"].get(name):
+                    result["config"][name] = MASK
+        return result
+    if isinstance(value, list):
+        return [_redact(item) for item in value]
+    return value
+
+
+def _merge_masked(value, current):
+    if value == MASK:
+        return current
+    if isinstance(value, dict):
+        previous = current if isinstance(current, dict) else {}
+        return {key: _merge_masked(item, previous.get(key)) for key, item in value.items()}
+    if isinstance(value, list):
+        previous = current if isinstance(current, list) else []
+        identity = next(
+            (key for key in ("name", "route_id", "id", "plugin_id") if any(isinstance(item, dict) and key in item for item in value)),
+            None,
+        )
+        by_identity = {
+            item.get(identity): item for item in previous if identity and isinstance(item, dict) and identity in item
+        }
+        return [
+            _merge_masked(
+                item,
+                by_identity.get(item.get(identity), {})
+                if identity and isinstance(item, dict)
+                else (previous[index] if index < len(previous) else None),
+            )
+            for index, item in enumerate(value)
+        ]
+    return value
 
 
 def enqueue(payload):
@@ -130,6 +243,32 @@ def enqueue_event(route_id, event, template_type, context, message, push_img_url
 @app.get("/healthz")
 def healthz():
     return {"status": "ok", "version": __version__}
+
+
+@app.post("/api/admin/login")
+def admin_login(payload: LoginRequest, response: Response):
+    if not _valid_admin(payload.username, payload.password):
+        raise HTTPException(401, "用户名或密码错误")
+    response.set_cookie(
+        SESSION_COOKIE,
+        _session_token(payload.username),
+        max_age=86400 * 30,
+        httponly=True,
+        samesite="lax",
+        secure=enabled(os.environ.get("COOKIE_SECURE", "0")),
+    )
+    return {"authenticated": True, "username": payload.username}
+
+
+@app.post("/api/admin/logout")
+def admin_logout(response: Response):
+    response.delete_cookie(SESSION_COOKIE)
+    return {"authenticated": False}
+
+
+@app.get("/api/admin/session")
+def admin_session(notify_session: str | None = Cookie(default=None)):
+    return {"authenticated": _valid_session(notify_session), "username": os.environ.get("NH_USER", "admin")}
 
 
 @app.post("/api/service/notify", dependencies=[Depends(api_auth)])
@@ -231,19 +370,20 @@ def admin_status():
         "routes": len(store.routes),
         "plugins": len(plugin_manifests),
         "plugin_tasks": enabled(os.environ.get("PLUGIN_TASKS_ENABLED", "1")),
+        "stats": store.dashboard_stats(),
         "deliveries": store.delivery_status(25),
     }
 
 
 @app.get("/api/admin/config", dependencies=[Depends(admin_auth)])
 def admin_config():
-    return store.config
+    return _redact(store.config)
 
 
 @app.put("/api/admin/config", dependencies=[Depends(admin_auth)])
 def save_config(payload: dict = Body(...)):
     try:
-        store.save_config(payload)
+        store.save_config(_merge_masked(payload, store.config))
     except ValueError as exc:
         raise HTTPException(400, str(exc)) from exc
     return {"code": 0, "message": "saved"}
@@ -268,6 +408,13 @@ def records(limit: int = 100):
     return store.recent_records(max(1, min(limit, 500)))
 
 
+@app.get("/api/admin/deliveries", dependencies=[Depends(admin_auth)])
+def deliveries(limit: int = 100, status: str | None = None):
+    if status not in {None, "pending", "processing", "retry", "sent", "failed"}:
+        raise HTTPException(400, "invalid delivery status")
+    return store.delivery_status(max(1, min(limit, 500)), status)
+
+
 @app.post("/api/admin/deliveries/{delivery_id}/retry", dependencies=[Depends(admin_auth)])
 def retry_delivery(delivery_id: int):
     if not store.retry_failed(delivery_id):
@@ -275,14 +422,40 @@ def retry_delivery(delivery_id: int):
     return {"code": 0, "message": "queued"}
 
 
+@app.post("/api/admin/channels/{channel_name}/test", dependencies=[Depends(admin_auth)])
+def test_channel(channel_name: str, payload: TestNotification):
+    try:
+        outbox_id = store.enqueue_channel(
+            channel_name,
+            payload.title,
+            payload.content,
+            payload.push_img_url,
+            payload.push_link_url,
+        )
+    except KeyError as exc:
+        raise HTTPException(404, "channel not found") from exc
+    return {"code": 0, "message": "queued", "outbox_id": outbox_id}
+
+
+@app.get("/api/admin/logs", dependencies=[Depends(admin_auth)])
+def logs(limit: int = 200):
+    return list(LOG_BUFFER)[-max(1, min(limit, 500)):]
+
+
 @app.get("/api/admin/plugins", dependencies=[Depends(admin_auth)])
 def plugins():
-    return plugin_manifests
+    return [
+        {
+            **manifest,
+            "has_frontend": (store.plugins_dir / str(manifest.get("id") or "") / "frontend").is_dir(),
+        }
+        for manifest in plugin_manifests
+    ]
 
 
 @app.get("/api/admin/plugins/{plugin_id}/config", dependencies=[Depends(admin_auth)])
 def plugin_config(plugin_id: str):
-    return store.get_plugin_config(plugin_id)
+    return _redact(store.get_plugin_config(plugin_id))
 
 
 @app.put("/api/admin/plugins/{plugin_id}/config", dependencies=[Depends(admin_auth)])
@@ -290,15 +463,21 @@ def save_plugin_config(plugin_id: str, payload: dict = Body(...)):
     manifest = next((x for x in plugin_manifests if x.get("id") == plugin_id), None)
     if not manifest:
         raise HTTPException(404, "plugin not found")
-    store.save_plugin_config(plugin_id, manifest.get("name") or plugin_id, payload, 1)
+    store.save_plugin_config(
+        plugin_id,
+        manifest.get("name") or plugin_id,
+        _merge_masked(payload, store.get_plugin_config(plugin_id)),
+        1,
+    )
     return {"code": 0, "message": "saved"}
 
 
 STATIC_DIR = Path(__file__).with_name("static")
+app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
 
 
 @app.get("/")
-def index(_=Depends(admin_auth)):
+def index():
     return FileResponse(STATIC_DIR / "index.html")
 
 

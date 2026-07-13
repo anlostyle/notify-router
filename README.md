@@ -14,6 +14,19 @@ Current compatibility target:
 - durable SQLite outbox with retries
 - native Enterprise WeChat channels with a configurable API server
 
+## Management console
+
+The built-in responsive console provides a dashboard, channel and route forms,
+template editing with Enterprise WeChat News preview, plugin settings, delivery
+history and retry controls, process logs, and system settings. Existing
+NotifyHub JSON files remain the source of truth; the console edits the same
+objects without changing notification endpoints or message content.
+
+Secrets are redacted by admin APIs and blank secret fields keep their stored
+value. The login form exchanges `NH_USER` and `NH_PASSWORD` for an HttpOnly
+same-site session cookie instead of storing administrator credentials in the
+browser. Set `COOKIE_SECURE=1` when the console is served through HTTPS.
+
 Run locally:
 
 ```bash
