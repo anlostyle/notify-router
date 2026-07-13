@@ -35,10 +35,15 @@ security = HTTPBasic(auto_error=False)
 @asynccontextmanager
 async def lifespan(_app):
     worker.start()
-    start_scheduler()
-    await run_after_setup_hooks(logger)
+    plugin_tasks = enabled(os.environ.get("PLUGIN_TASKS_ENABLED", "1"))
+    if plugin_tasks:
+        start_scheduler()
+        await run_after_setup_hooks(logger)
+    else:
+        logger.info("plugin background tasks disabled")
     yield
-    stop_scheduler()
+    if plugin_tasks:
+        stop_scheduler()
     worker.stop()
 
 
@@ -225,6 +230,7 @@ def admin_status():
         "channels": len(store.channels),
         "routes": len(store.routes),
         "plugins": len(plugin_manifests),
+        "plugin_tasks": enabled(os.environ.get("PLUGIN_TASKS_ENABLED", "1")),
         "deliveries": store.delivery_status(25),
     }
 

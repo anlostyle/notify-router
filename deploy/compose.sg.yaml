@@ -13,4 +13,5 @@ services:
       WORKDIR: /data
       TZ: Asia/Shanghai
       INSTALL_PLUGIN_REQUIREMENTS: "1"
+      PLUGIN_TASKS_ENABLED: "0"
     restart: unless-stopped

@@ -24,7 +24,7 @@ The compatibility instance listens on `127.0.0.1:5401` by default.
 
 ## Parallel deployment
 
-The production compose file is `deploy/compose.sg.yaml`. It mounts `/appdata/notify-router/data`, reads root-only credentials from `/opt/notify-router/.env`, and deliberately binds only to `127.0.0.1:5401` until the reverse proxy is switched.
+The production compose file is `deploy/compose.sg.yaml`. It mounts `/appdata/notify-router/data`, reads root-only credentials from `/opt/notify-router/.env`, and deliberately binds only to `127.0.0.1:5401` until the reverse proxy is switched. `PLUGIN_TASKS_ENABLED=0` prevents duplicate cron jobs and bot polling while the old instance is still active.
 
 ## Final data migration
 
@@ -38,6 +38,7 @@ For final cutover, stop both containers first, then run:
 
 ```bash
 python scripts/migrate_legacy_data.py --confirm-stopped /appdata/notifyhub/data /appdata/notify-router/data
+# Change PLUGIN_TASKS_ENABLED to "1" after the old container is stopped.
 docker compose -f deploy/compose.sg.yaml up -d
 ```
 
