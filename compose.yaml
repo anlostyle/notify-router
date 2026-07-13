@@ -1,0 +1,14 @@
+services:
+  notify-router:
+    build: .
+    container_name: notify-router
+    ports:
+      - "127.0.0.1:5401:5400"
+    volumes:
+      - ./data:/data
+    environment:
+      WORKDIR: /data
+      NH_USER: admin
+      NH_PASSWORD: change-me
+      TZ: Asia/Shanghai
+    restart: unless-stopped

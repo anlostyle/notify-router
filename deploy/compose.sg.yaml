@@ -1,0 +1,16 @@
+services:
+  notify-router:
+    build:
+      context: ..
+    container_name: notify-router
+    ports:
+      - "127.0.0.1:5401:5400"
+    volumes:
+      - /appdata/notify-router/data:/data
+    env_file:
+      - /opt/notify-router/.env
+    environment:
+      WORKDIR: /data
+      TZ: Asia/Shanghai
+      INSTALL_PLUGIN_REQUIREMENTS: "1"
+    restart: unless-stopped

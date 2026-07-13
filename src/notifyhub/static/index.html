@@ -1,0 +1,87 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Notify Router</title>
+  <style>
+    :root { color-scheme:dark; font-family:system-ui,sans-serif; background:#0b0d12; color:#edf0f6 }
+    body { max-width:1100px; margin:40px auto; padding:0 20px }
+    h1 { margin-bottom:6px } h2 { margin-top:34px } .muted { color:#9aa3b2 }
+    .cards { display:grid; grid-template-columns:repeat(auto-fit,minmax(180px,1fr)); gap:14px; margin:28px 0 }
+    .card, table, details { background:#151820; border:1px solid #272c38; border-radius:12px }
+    .card { padding:18px } .value { font-size:30px; font-weight:700; margin-top:8px }
+    table { width:100%; border-collapse:collapse; overflow:hidden }
+    th,td { text-align:left; padding:12px; border-bottom:1px solid #272c38; font-size:14px; overflow-wrap:anywhere }
+    th { color:#9aa3b2 } .sent { color:#66d997 } .failed { color:#ff7777 } .retry { color:#f6c76b }
+    details { margin:14px 0; padding:16px } summary { cursor:pointer; font-weight:700 }
+    textarea { width:100%; min-height:320px; box-sizing:border-box; margin:14px 0; padding:12px; resize:vertical; color:#edf0f6; background:#0b0d12; border:1px solid #343b49; border-radius:8px; font:13px ui-monospace,monospace }
+    button,select { padding:9px 14px; color:#edf0f6; background:#2667d8; border:0; border-radius:7px; cursor:pointer }
+    select { background:#252b37; margin:14px 8px 0 0 } .notice { min-height:24px; margin-top:12px; color:#66d997 }
+  </style>
+</head>
+<body>
+  <h1>Notify Router</h1>
+  <div class="muted">兼容 NotifyHub 数据、接口与插件的通知路由器</div>
+  <div class="cards">
+    <div class="card">通知渠道<div class="value" id="channels">-</div></div>
+    <div class="card">通知通道<div class="value" id="routes">-</div></div>
+    <div class="card">插件<div class="value" id="plugins">-</div></div>
+    <div class="card">版本<div class="value" id="version">-</div></div>
+  </div>
+
+  <h2>最近投递</h2>
+  <table><thead><tr><th>ID</th><th>通道</th><th>渠道</th><th>状态</th><th>尝试</th><th>错误</th></tr></thead><tbody id="rows"></tbody></table>
+
+  <h2>配置管理</h2>
+  <details><summary>通知渠道与通道</summary><textarea id="config"></textarea><button data-save="config">保存配置</button></details>
+  <details><summary>通知模板</summary><textarea id="templates"></textarea><button data-save="templates">保存模板</button></details>
+  <details><summary>插件配置</summary><select id="plugin-select"></select><textarea id="plugin-config"></textarea><button id="save-plugin">保存插件配置</button></details>
+  <div class="notice" id="notice"></div>
+
+  <script>
+    const get = async url => { const r=await fetch(url); if(!r.ok) throw new Error(await r.text()); return r.json() }
+    const put = async (url,data) => { const r=await fetch(url,{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(data)}); if(!r.ok) throw new Error(await r.text()); return r.json() }
+    const json = value => JSON.stringify(value,null,2)
+    const notice = message => { document.getElementById('notice').textContent=message; setTimeout(()=>document.getElementById('notice').textContent='',3000) }
+    let manifests=[]
+
+    async function load() {
+      const [status,config,templates,plugins]=await Promise.all([
+        get('/api/admin/status'), get('/api/admin/config'), get('/api/admin/templates'), get('/api/admin/plugins')
+      ])
+      for(const k of ['channels','routes','plugins','version']) document.getElementById(k).textContent=status[k]
+      const tbody=document.getElementById('rows'); tbody.replaceChildren()
+      for(const x of status.deliveries) {
+        const tr=document.createElement('tr')
+        for(const value of [x.id,x.route_name,x.channel_name,x.status,x.attempts,x.last_error||'']) {
+          const td=document.createElement('td'); td.textContent=value; if(value===x.status) td.className=x.status; tr.appendChild(td)
+        }
+        tbody.appendChild(tr)
+      }
+      document.getElementById('config').value=json(config)
+      document.getElementById('templates').value=json(templates)
+      manifests=plugins
+      const select=document.getElementById('plugin-select'); select.replaceChildren()
+      for(const plugin of plugins) { const option=document.createElement('option'); option.value=plugin.id; option.textContent=`${plugin.name||plugin.id} (${plugin.id})`; select.appendChild(option) }
+      await loadPlugin()
+    }
+
+    async function loadPlugin() {
+      const id=document.getElementById('plugin-select').value
+      document.getElementById('plugin-config').value=id ? json(await get(`/api/admin/plugins/${encodeURIComponent(id)}/config`)) : '{}'
+    }
+
+    document.querySelectorAll('[data-save]').forEach(button=>button.onclick=async()=>{
+      const name=button.dataset.save
+      try { await put(`/api/admin/${name}`,JSON.parse(document.getElementById(name).value)); notice('保存成功') } catch(e) { notice(`保存失败：${e.message}`) }
+    })
+    document.getElementById('plugin-select').onchange=loadPlugin
+    document.getElementById('save-plugin').onclick=async()=>{
+      const id=document.getElementById('plugin-select').value
+      try { await put(`/api/admin/plugins/${encodeURIComponent(id)}/config`,JSON.parse(document.getElementById('plugin-config').value)); notice('插件配置已保存，重启后加载新设置') } catch(e) { notice(`保存失败：${e.message}`) }
+    }
+    load().catch(e=>notice(`加载失败：${e.message}`))
+  </script>
+</body>
+</html>
