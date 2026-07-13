@@ -1,4 +1,5 @@
 import hmac
+import json
 import logging
 import os
 import time
@@ -273,6 +274,11 @@ def admin_session(notify_session: str | None = Cookie(default=None)):
 
 @app.post("/api/service/notify", dependencies=[Depends(api_auth)])
 def notify(payload: object = Body(...)):
+    if isinstance(payload, (str, bytes)):
+        try:
+            payload = json.loads(payload)
+        except (json.JSONDecodeError, UnicodeDecodeError):
+            pass
     if not isinstance(payload, dict):
         return notify_error("请求体不是合法的JSON格式")
     route_id = payload.get("route_id")

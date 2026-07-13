@@ -1,4 +1,5 @@
 import importlib
+import json
 
 from fastapi.testclient import TestClient
 
@@ -25,3 +26,11 @@ def test_notify_api_keeps_legacy_response_shape(tmp_path, monkeypatch):
         response = client.post("/api/service/notify", json={})
         assert response.status_code == 400
         assert response.json()["errorCode"] == 1
+
+        response = client.post(
+            "/api/service/notify",
+            content=json.dumps({"route_id": "r1", "title": "t", "content": "Uptime Kuma"}),
+            headers={"content-type": "application/x-www-form-urlencoded"},
+        )
+        assert response.status_code == 200
+        assert response.json()["success"] is True
