@@ -290,6 +290,11 @@ def notify(payload: object = Body(...)):
         return notify_error("请求体不是合法的JSON格式")
 
 
+@app.get("/api/service/notify", dependencies=[Depends(api_auth)])
+def notify_query(route_id: str, title: str, content: str, push_img_url: str | None = None, push_link_url: str | None = None):
+    return enqueue(NotifyRequest(route_id=route_id, title=title, content=content, push_img_url=push_img_url, push_link_url=push_link_url))
+
+
 @app.api_route("/api/service/notify/{route_id}/{title}/{content}", methods=["GET", "POST"], dependencies=[Depends(api_auth)])
 async def bark_compatible(route_id: str, title: str, content: str, request: Request):
     body = {}
@@ -360,10 +365,19 @@ async def pve_compatible(route_id: str, request: Request):
         return None
     if not active_route(route_id):
         return notify_error(f"未找到或未激活的通道: {route_id}")
+    payload = {}
     try:
         payload = await request.json()
         event, template_type, context = parse_pve(payload)
     except (ValueError, TypeError) as exc:
+        if isinstance(payload, dict) and (payload.get("title") or payload.get("message")):
+            return enqueue(
+                NotifyRequest(
+                    route_id=route_id,
+                    title=str(payload.get("title") or "PVE"),
+                    content=str(payload.get("message") or payload.get("title") or ""),
+                )
+            )
         return notify_error(str(exc))
     return enqueue_event(route_id, event, template_type, context, "PVE事件通知已进入发送队列")
 

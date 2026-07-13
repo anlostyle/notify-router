@@ -34,3 +34,17 @@ def test_notify_api_keeps_legacy_response_shape(tmp_path, monkeypatch):
         )
         assert response.status_code == 200
         assert response.json()["success"] is True
+
+        response = client.get(
+            "/api/service/notify",
+            params={"route_id": "r1", "title": "t", "content": "legacy query"},
+        )
+        assert response.status_code == 200
+        assert response.json()["success"] is True
+
+        response = client.post(
+            "/api/service/pve/notify/r1/message",
+            json={"title": "Test notification", "message": "Proxmox VE test notification"},
+        )
+        assert response.status_code == 200
+        assert response.json()["success"] is True
