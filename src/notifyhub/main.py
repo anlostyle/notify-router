@@ -219,10 +219,17 @@ def enqueue(payload):
     route = active_route(payload.route_id)
     if not route:
         return notify_error(f"未找到或未激活的通道: {payload.route_id}")
+    title = payload.title
+    offline_suffix = " 又有设备离线啦～"
+    if route.get("route_name") == "哪吒监控" and title.endswith(offline_suffix):
+        if title.startswith("[事件] "):
+            title = f"🔴 设备离线｜{title.removeprefix('[事件] ').removesuffix(offline_suffix)}"
+        elif title.startswith("[恢复] "):
+            title = f"✅ 设备恢复｜{title.removeprefix('[恢复] ').removesuffix(offline_suffix)}"
     try:
         store.enqueue_router(
             payload.route_id,
-            payload.title,
+            title,
             payload.content,
             payload.push_img_url,
             payload.push_link_url,

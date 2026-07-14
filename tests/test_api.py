@@ -18,7 +18,13 @@ def test_notify_api_keeps_legacy_response_shape(tmp_path, monkeypatch):
                     "channel_name": ["test"],
                     "bind_template": ["movie", "series"],
                     "active": True,
-                }
+                },
+                {
+                    "route_id": "nezha",
+                    "route_name": "哪吒监控",
+                    "channel_name": ["test"],
+                    "active": True,
+                },
             ],
         }
     )
@@ -60,6 +66,18 @@ def test_notify_api_keeps_legacy_response_shape(tmp_path, monkeypatch):
         )
         assert response.status_code == 200
         assert response.json()["success"] is True
+
+        for title, expected in (
+            ("[事件] Pixel6(1.2.3.4) 又有设备离线啦～", "🔴 设备离线｜Pixel6(1.2.3.4)"),
+            ("[恢复] Pixel6(1.2.3.4) 又有设备离线啦～", "✅ 设备恢复｜Pixel6(1.2.3.4)"),
+        ):
+            response = client.post(
+                "/api/service/notify",
+                json={"route_id": "nezha", "title": title, "content": "metrics"},
+            )
+            assert response.status_code == 200
+            with main.store.connect() as db:
+                assert db.execute("SELECT title FROM outbox ORDER BY rowid DESC LIMIT 1").fetchone()[0] == expected
 
         response = client.post(
             "/api/service/pve/notify/r1/message",
