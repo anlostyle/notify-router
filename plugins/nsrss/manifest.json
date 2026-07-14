@@ -1,0 +1,47 @@
+{
+    "id": "nsrss",
+    "name": "NS/DF论坛rss监控",
+    "description": "NS/DF论坛rss监控",
+    "author": "htnanako",
+    "logo": "",
+    "thumbnailurl": "",
+    "version": "0.0.2",
+    "documentation": "",
+    "path": "/nsrss",
+    "configField": [
+        {
+            "fieldName": "site_list",
+            "fieldType": "multi_select",
+            "label": "监控站点",
+            "helpText": "监控站点，多个站点用英文逗号分隔",
+            "defaultValue": ["ns"],
+            "options": [
+                {"value": "ns", "label": "NodeSeek论坛"},
+                {"value": "df", "label": "DeepFlood论坛"}
+            ]
+        },
+        {
+            "fieldName": "keyword",
+            "fieldType": "string",
+            "label": "监控关键词",
+            "helpText": "监控关键词，多个关键词用英文逗号分隔",
+            "defaultValue": ""
+        },
+        {
+            "fieldName": "bind_routes",
+            "fieldType": "enum",
+            "label": "绑定通知渠道(可多选)",
+            "enumValuesRef": "RouterList",
+            "multiValue": true
+        },
+        {
+            "fieldName": "rss_cron",
+            "fieldType": "string",
+            "label": "RSS定时任务",
+            "helpText": "RSS定时任务，格式为五位cron格式",
+            "defaultValue": "* * * * *"
+        }
+    ],
+    "helpTextField": [],
+    "frontend_page": {}
+}

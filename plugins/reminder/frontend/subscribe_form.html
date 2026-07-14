@@ -1,0 +1,740 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>编辑订阅</title>
+  <script>
+    try { tailwind = tailwind || {}; } catch (e) { /* ignore */ }
+    try { tailwind.config = Object.assign({}, tailwind.config || {}, { darkMode: 'class' }); } catch (e) { /* ignore */ }
+  </script>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <style>
+    .bg-background {
+      background-color: #030816 !important;
+    }
+  </style>
+  <script>
+    (function () {
+      function updateTheme(theme) {
+        var t = (theme || '').toString().toLowerCase() === 'dark' ? 'dark' : 'light';
+        var root = document.documentElement;
+        if (t === 'dark') root.classList.add('dark'); else root.classList.remove('dark');
+        try { root.setAttribute('data-theme', t); } catch (e) { }
+        root.style.colorScheme = t;
+        var body = document.body;
+        if (!body) return;
+        if (t === 'dark') {
+          body.classList.remove('text-gray-900');
+          body.classList.add('bg-background', 'text-gray-100');
+        } else {  
+          body.classList.remove('bg-background', 'text-gray-100');
+          body.classList.add('text-gray-900');
+        }
+
+        // 同步主题到弹窗
+        syncThemeToModals(t);
+
+        try { localStorage.setItem('nhtheme', t); } catch (e) { }
+        window.nhtheme = t;
+        try { console.log('[reminder:subscribe_form] theme updated ->', t, 'html.classes=', root.className); } catch (e) { }
+      }
+
+      // 同步主题到所有弹窗和下拉菜单
+      function syncThemeToModals(theme) {
+        var containers = document.querySelectorAll('[data-theme-container]');
+        containers.forEach(function (container) {
+          container.setAttribute('data-theme', theme);
+
+          if (theme === 'dark') {
+            // 深色模式样式
+            container.classList.remove('bg-white', 'text-gray-900');
+            container.classList.add('bg-gray-900', 'text-gray-100');
+
+            // 更新子元素样式
+            container.querySelectorAll('button:not(.bg-blue-600)').forEach(function (btn) {
+              btn.classList.remove('bg-white', 'border-gray-300');
+              btn.classList.add('bg-gray-800', 'border-gray-700');
+            });
+
+            container.querySelectorAll('[id$="Menu"]').forEach(function (menu) {
+              menu.classList.remove('bg-white', 'border-gray-200');
+              menu.classList.add('bg-gray-900', 'border-gray-700');
+            });
+          } else {
+            // 浅色模式样式
+            container.classList.remove('bg-gray-900', 'text-gray-100');
+            container.classList.add('bg-white', 'text-gray-900');
+
+            // 更新子元素样式
+            container.querySelectorAll('button:not(.bg-blue-600)').forEach(function (btn) {
+              btn.classList.remove('bg-gray-800', 'border-gray-700');
+              btn.classList.add('bg-white', 'border-gray-300');
+            });
+
+            container.querySelectorAll('[id$="Menu"]').forEach(function (menu) {
+              menu.classList.remove('bg-gray-900', 'border-gray-700');
+              menu.classList.add('bg-white', 'border-gray-200');
+            });
+          }
+        });
+
+        // 特别处理所有下拉菜单的选项
+        var dropdownButtons = document.querySelectorAll('button[data-theme-container]');
+        dropdownButtons.forEach(function (btn) {
+          btn.setAttribute('data-theme', theme);
+
+          if (!btn.disabled) {
+            if (theme === 'dark') {
+              btn.classList.remove('text-gray-700', 'hover:bg-blue-50');
+              btn.classList.add('text-gray-200', 'hover:bg-gray-800');
+            } else {
+              btn.classList.remove('text-gray-200', 'hover:bg-gray-800');
+              btn.classList.add('text-gray-700', 'hover:bg-blue-50');
+            }
+          }
+        });
+        var dropdownBtns = document.querySelectorAll('button[data-theme-btn]');
+        dropdownBtns.forEach(function (btn) {
+          btn.setAttribute('data-theme', theme);
+          if (theme === 'dark') {
+            btn.classList.remove('bg-white');
+            btn.classList.add('text-gray-100');
+          } else {
+            btn.classList.remove('text-gray-100');
+            btn.classList.add('bg-white', 'text-gray-900');
+          }
+        });
+      }
+      function getThemeFromParent() {
+        try { if (window.parent && window.parent !== window) { var t = window.parent.nhtheme; if (t === 'light' || t === 'dark') return t; } } catch (e) { }
+        try { var s = localStorage.getItem('nhtheme'); if (s === 'light' || s === 'dark') return s; } catch (e) { }
+        return 'light';
+      }
+      window.addEventListener('message', function (event) {
+        if (!event || !event.data) return;
+        var type = (event.data.type || '').toString();
+        if (type === 'injectTheme' || type.toLowerCase() === 'inject-theme') {
+          var theme = (event.data.theme || (event.data.payload && event.data.payload.theme) || '').toString().toLowerCase();
+          if (theme === 'light' || theme === 'dark') updateTheme(theme);
+        }
+      });
+      document.addEventListener('DOMContentLoaded', function () { updateTheme(getThemeFromParent()); });
+    })();
+  </script>
+</head>
+
+<body class="bg-white text-gray-900">
+  <header>
+    <div class="w-full px-6 py-6">
+      <h1 class="text-2xl font-semibold data-[theme=dark]:text-gray-100">编辑Subscribe订阅</h1>
+      <p class="text-sm text-gray-500 mt-1 data-[theme=dark]:text-gray-400">配置Subscribe订阅任务</p>
+    </div>
+  </header>
+
+  <main class="w-full px-6 py-8">
+    <form id="subscribeForm" class="w-full">
+      <div class="grid grid-cols-1 gap-6">
+        <!-- 标题 -->
+        <div>
+          <label class="block text-sm font-medium text-gray-700 mb-2 data-[theme=dark]:text-gray-200">标题</label>
+          <input id="title" type="text" placeholder="请输入订阅标题" required
+            class="w-full rounded-lg border border-gray-300 px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 data-[theme=dark]:bg-gray-800 data-[theme=dark]:border-gray-700 data-[theme=dark]:text-gray-200" />
+          <p id="err-title" class="mt-2 text-xs text-red-600 hidden"></p>
+        </div>
+
+        <!-- 价格和货币 -->
+        <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+          <div>
+            <label class="block text-sm font-medium text-gray-700 mb-2 data-[theme=dark]:text-gray-200">价格</label>
+            <input id="price" type="number" step="0.01" min="0" placeholder="0.00" required
+              class="w-full rounded-lg border border-gray-300 px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 data-[theme=dark]:bg-gray-800 data-[theme=dark]:border-gray-700 data-[theme=dark]:text-gray-200" />
+            <p id="err-price" class="mt-2 text-xs text-red-600 hidden"></p>
+          </div>
+          <div>
+            <label class="block text-sm font-medium text-gray-700 mb-2 data-[theme=dark]:text-gray-200">货币</label>
+            <div class="relative">
+              <button type="button" id="currencyDropdownBtn" data-theme-btn
+                class="w-full rounded-lg border px-3 py-2 text-left hover:border-blue-300 focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white border-gray-300"
+                data-theme="light">
+                <span id="currencyDropdownLabel">请选择</span>
+              </button>
+              <div id="currencyDropdownMenu" data-theme-container
+                class="hidden absolute left-0 right-0 z-10 mt-1 rounded-lg border shadow bg-white border-gray-200"
+                data-theme="light">
+                <div id="currencyDropdownOptions" class="max-h-60 overflow-auto py-1"></div>
+              </div>
+            </div>
+            <p id="err-currency" class="mt-2 text-xs text-red-600 hidden"></p>
+          </div>
+        </div>
+
+        <!-- 分类 -->
+        <div>
+          <label class="block text-sm font-medium text-gray-700 mb-2 data-[theme=dark]:text-gray-200">分类</label>
+          <input id="category" type="text" placeholder="请输入订阅分类" required
+            class="w-full rounded-lg border border-gray-300 px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 data-[theme=dark]:bg-gray-800 data-[theme=dark]:border-gray-700 data-[theme=dark]:text-gray-200" />
+          <p id="err-category" class="mt-2 text-xs text-red-600 hidden"></p>
+        </div>
+
+        <!-- 账单周期 -->
+        <div>
+          <label class="block text-sm font-medium text-gray-700 mb-2 data-[theme=dark]:text-gray-200">账单周期</label>
+          <div class="relative">
+            <button type="button" id="billCycleDropdownBtn" data-theme-btn
+              class="w-full rounded-lg border px-3 py-2 text-left hover:border-blue-300 focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white border-gray-300"
+              data-theme="light">
+              <span id="billCycleDropdownLabel">请选择</span>
+            </button>
+            <div id="billCycleDropdownMenu" data-theme-container
+              class="hidden absolute left-0 right-0 z-10 mt-1 rounded-lg border shadow bg-white border-gray-200"
+              data-theme="light">
+              <div id="billCycleDropdownOptions" class="max-h-60 overflow-auto py-1"></div>
+            </div>
+          </div>
+          <p id="err-bill-cycle" class="mt-2 text-xs text-red-600 hidden"></p>
+        </div>
+
+        <!-- 开始日期 -->
+        <div>
+          <label class="block text-sm font-medium text-gray-700 mb-2 data-[theme=dark]:text-gray-200">开始日期</label>
+          <!-- 隐藏真实值，便于复用既有校验与提交逻辑 -->
+          <input id="start_date" type="hidden" />
+          <button type="button" id="btnPickDate"
+            class="w-full rounded-lg border px-3 py-2 text-left hover:border-blue-300 focus:outline-none focus:ring-2 focus:ring-blue-500 data-[theme=light]:bg-white data-[theme=light]:border-gray-300 data-[theme=light]:text-gray-900 data-[theme=dark]:bg-gray-800 data-[theme=dark]:border-gray-700 data-[theme=dark]:text-gray-100">
+            <span id="dateDisplay"
+              class="block data-[theme=light]:text-gray-900 data-[theme=dark]:text-gray-100">请选择日期</span>
+          </button>
+          <p id="err-start-date" class="mt-2 text-xs text-red-600 hidden"></p>
+        </div>
+
+        <!-- 提前提醒时间 -->
+        <div>
+          <label class="block text-sm font-medium text-gray-700 mb-2 data-[theme=dark]:text-gray-200">提前提醒天数</label>
+          <div class="flex items-center gap-2">
+            <input id="lead_time" type="number" min="1" step="1" placeholder="7" required
+              class="flex-1 rounded-lg border border-gray-300 px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 data-[theme=dark]:bg-gray-800 data-[theme=dark]:border-gray-700 data-[theme=dark]:text-gray-200" />
+            <!-- <span class="text-sm text-gray-600 data-[theme=dark]:text-gray-400">天</span> -->
+          </div>
+          <p id="err-lead-time" class="mt-2 text-xs text-red-600 hidden"></p>
+        </div>
+
+        <!-- 通知通道 -->
+        <div>
+          <label class="block text-sm font-medium text-gray-700 mb-2 data-[theme=dark]:text-gray-200">通知通道</label>
+          <div class="relative">
+            <button type="button" id="notifyDropdownBtn" data-theme-btn
+              class="w-full rounded-lg border px-3 py-2 text-left hover:border-blue-300 focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white border-gray-300"
+              data-theme="light">
+              <span id="notifyDropdownLabel">请选择</span>
+            </button>
+            <div id="notifyDropdownMenu" data-theme-container
+              class="hidden absolute left-0 right-0 z-10 mt-1 rounded-lg border shadow bg-white border-gray-200"
+              data-theme="light">
+              <div id="notifyDropdownOptions" class="max-h-60 overflow-auto py-1"></div>
+            </div>
+          </div>
+          <p id="err-notify-route" class="mt-2 text-xs text-red-600 hidden"></p>
+        </div>
+
+        <!-- 状态 -->
+        <div>
+          <label class="block text-sm font-medium text-gray-700 mb-2 data-[theme=dark]:text-gray-200">启用状态</label>
+          <div class="flex items-center gap-6">
+            <label class="inline-flex items-center gap-2">
+              <input type="radio" name="status" value="1" class="h-4 w-4 text-blue-600 border-gray-300" checked />
+              <span class="text-sm">启用</span>
+            </label>
+            <label class="inline-flex items-center gap-2">
+              <input type="radio" name="status" value="0" class="h-4 w-4 text-blue-600 border-gray-300" />
+              <span class="text-sm">禁用</span>
+            </label>
+          </div>
+        </div>
+
+        <!-- 操作 -->
+        <div class="flex items-center gap-4">
+          <button type="button" id="btnSave"
+            class="inline-flex items-center justify-center px-5 py-2.5 rounded-lg bg-blue-600 text-white hover:bg-blue-700">保存</button>
+          <a href="subscribe.html"
+            class="inline-flex items-center justify-center px-5 py-2.5 rounded-lg border bg-white text-gray-700 hover:text-gray-900 data-[theme=dark]:bg-gray-900 data-[theme=dark]:text-gray-200 data-[theme=dark]:border-gray-700">取消</a>
+        </div>
+      </div>
+    </form>
+  </main>
+
+  <script>
+    function $(id) { return document.getElementById(id); }
+    function getRadio(name) {
+      const els = document.querySelectorAll(`input[name="${name}"]`);
+      for (const el of els) { if (el.checked) return el.value; }
+      return '';
+    }
+
+    // 通用下拉菜单项渲染
+    function buildMenuOptions(container, values, onSelect) {
+      if (!container) return;
+      container.innerHTML = '';
+      values.forEach(({ value, label, disabled }) => {
+        const btn = document.createElement('button');
+        btn.type = 'button';
+        const isDarkMode = document.documentElement.classList.contains('dark');
+        btn.className = `w-full text-left px-3 py-2 ${disabled ? 'text-gray-300 cursor-not-allowed' : isDarkMode ? 'text-gray-200 hover:bg-gray-800' : 'text-gray-700 hover:bg-blue-50'}`;
+        btn.setAttribute('data-theme-container', '');
+        btn.setAttribute('data-theme', isDarkMode ? 'dark' : 'light');
+        btn.textContent = label;
+        btn.disabled = !!disabled;
+        if (!disabled) btn.addEventListener('click', () => onSelect(value, label));
+        container.appendChild(btn);
+      });
+    }
+
+    // 读取查询参数
+    function getQuery(k) {
+      try { return new URLSearchParams(location.search).get(k); } catch (e) { return null; }
+    }
+    const editingId = getQuery('id');
+    let presetNotifyRoute = '';
+    const API_BASE = '/api/plugins/reminder';
+    
+    async function fetchDetail(id) {
+      try {
+        const res = await fetch(`${API_BASE}/subscribe/${encodeURIComponent(id)}`);
+        const data = await res.json();
+        if (data && data.data) return data.data;
+      } catch (e) { }
+      return null;
+    }
+    
+    async function fillFormByData(d) {
+      if (!d) return;
+      $('title').value = d.title || '';
+      $('price').value = d.price || '';
+      $('category').value = d.category || '';
+      
+      // 处理 lead_time，从 "X天" 格式中提取数字
+      const leadTimeStr = String(d.lead_time || '');
+      const leadTimeMatch = leadTimeStr.match(/^(\d+)/);
+      $('lead_time').value = leadTimeMatch ? leadTimeMatch[1] : '';
+      
+      (document.querySelector(`input[name="status"][value="${d.status ? '1' : '0'}"]`) || {}).checked = true;
+      
+      // 设置货币下拉
+      try {
+        const currencyValue = String(d.currency || '');
+        const currencyLbl = document.getElementById('currencyDropdownLabel');
+        if (currencyLbl && currencyValue) {
+          const currencyOptions = getCurrencyOptions();
+          const currencyOption = currencyOptions.find(o => o.value === currencyValue);
+          if (currencyOption) {
+            currencyLbl.textContent = currencyOption.label;
+            currencyLbl.dataset.value = currencyValue;
+          }
+        }
+      } catch (e) { }
+      
+      // 设置账单周期下拉
+      try {
+        const billCycleValue = String(d.bill_cycle || '');
+        const billCycleLbl = document.getElementById('billCycleDropdownLabel');
+        if (billCycleLbl && billCycleValue) {
+          const billCycleOptions = getBillCycleOptions();
+          const billCycleOption = billCycleOptions.find(o => o.value === billCycleValue);
+          if (billCycleOption) {
+            billCycleLbl.textContent = billCycleOption.label;
+            billCycleLbl.dataset.value = billCycleValue;
+          }
+        }
+      } catch (e) { }
+      
+      // 设置日期选择器
+      if (d.start_date) {
+        setDateValue(d.start_date);
+      }
+      
+      // 设置通知通道
+      try {
+        presetNotifyRoute = String(d.notify_route || '');
+        const lbl = document.getElementById('notifyDropdownLabel');
+        if (lbl) {
+          lbl.dataset.value = presetNotifyRoute;
+        }
+      } catch (e) { }
+    }
+    
+    (async function initEdit() {
+      if (editingId) {
+        const d = await fetchDetail(editingId);
+        await fillFormByData(d);
+      }
+    })();
+
+    // 货币选项
+    function getCurrencyOptions() {
+      return [
+        { value: 'CNY', label: 'CNY - 人民币' },
+        { value: 'USD', label: 'USD - 美元' },
+        { value: 'EUR', label: 'EUR - 欧元' },
+        { value: 'GBP', label: 'GBP - 英镑' },
+        { value: 'JPY', label: 'JPY - 日元' },
+        { value: 'HKD', label: 'HKD - 港币' },
+        { value: 'KRW', label: 'KRW - 韩元' },
+        { value: 'SGD', label: 'SGD - 新加坡元' },
+        { value: 'AUD', label: 'AUD - 澳元' },
+        { value: 'CAD', label: 'CAD - 加元' },
+      ];
+    }
+
+    // 账单周期选项
+    function getBillCycleOptions() {
+      return [
+        { value: '月', label: '月' },
+        { value: '季', label: '季' },
+        { value: '半年', label: '半年' },
+        { value: '年', label: '年' },
+        { value: '两年', label: '两年' },
+        { value: '三年', label: '三年' },
+      ];
+    }
+
+    // 初始化货币下拉
+    function loadCurrencyOptions() {
+      const options = getCurrencyOptions();
+      const menu = document.getElementById('currencyDropdownOptions');
+      const labelEl = document.getElementById('currencyDropdownLabel');
+      const menuWrap = document.getElementById('currencyDropdownMenu');
+      const btn = document.getElementById('currencyDropdownBtn');
+      buildMenuOptions(menu, options, (value, label) => {
+        if (labelEl) { labelEl.textContent = label; labelEl.dataset.value = value; }
+        if (menuWrap) menuWrap.classList.add('hidden');
+      });
+      if (btn && menuWrap) {
+        btn.addEventListener('click', (e) => { e.stopPropagation(); menuWrap.classList.toggle('hidden'); });
+      }
+    }
+    loadCurrencyOptions();
+
+    // 初始化账单周期下拉
+    function loadBillCycleOptions() {
+      const options = getBillCycleOptions();
+      const menu = document.getElementById('billCycleDropdownOptions');
+      const labelEl = document.getElementById('billCycleDropdownLabel');
+      const menuWrap = document.getElementById('billCycleDropdownMenu');
+      const btn = document.getElementById('billCycleDropdownBtn');
+      buildMenuOptions(menu, options, (value, label) => {
+        if (labelEl) { labelEl.textContent = label; labelEl.dataset.value = value; }
+        if (menuWrap) menuWrap.classList.add('hidden');
+      });
+      if (btn && menuWrap) {
+        btn.addEventListener('click', (e) => { e.stopPropagation(); menuWrap.classList.toggle('hidden'); });
+      }
+    }
+    loadBillCycleOptions();
+
+    // 日期选择器相关函数
+    function setDateValue(val) {
+      $('start_date').value = val;
+      $('dateDisplay').textContent = val || '请选择日期';
+      $('start_date').dispatchEvent(new Event('change'));
+    }
+    // 初始化显示为已有值或空
+    setDateValue($('start_date').value || '');
+
+    // 日期弹窗
+    const dateModalId = 'datePickerModal';
+    function openModal(id) { document.getElementById(id)?.classList.remove('hidden'); syncThemeToModals(window.nhtheme || 'light'); }
+    function closeModal(id) { document.getElementById(id)?.classList.add('hidden'); }
+
+    $('btnPickDate').addEventListener('click', () => { renderCalendar(); openModal(dateModalId); });
+
+    // 日历渲染
+    let calCurrent = new Date();
+    function formatYMD(d) {
+      const y = d.getFullYear();
+      const m = (d.getMonth() + 1).toString().padStart(2, '0');
+      const da = d.getDate().toString().padStart(2, '0');
+      return `${y}-${m}-${da}`;
+    }
+    function startOfMonth(d) { return new Date(d.getFullYear(), d.getMonth(), 1); }
+    function endOfMonth(d) { return new Date(d.getFullYear(), d.getMonth() + 1, 0); }
+    function renderCalendar() {
+      const container = document.getElementById('calendarGrid');
+      const header = document.getElementById('calendarHeader');
+      if (!container || !header) return;
+      container.innerHTML = '';
+      header.textContent = `${calCurrent.getFullYear()}年 ${calCurrent.getMonth() + 1}月`;
+      const first = startOfMonth(calCurrent);
+      const last = endOfMonth(calCurrent);
+      const startWeek = first.getDay(); // 0=周日
+      for (let i = 0; i < startWeek; i++) {
+        const cell = document.createElement('div');
+        container.appendChild(cell);
+      }
+      for (let day = 1; day <= last.getDate(); day++) {
+        const ymd = formatYMD(new Date(calCurrent.getFullYear(), calCurrent.getMonth(), day));
+        const btn = document.createElement('button');
+        btn.type = 'button';
+        btn.className = 'h-10 rounded-lg border hover:border-blue-300 data-[theme=light]:border-gray-300 data-[theme=dark]:border-gray-700 data-[theme=dark]:text-gray-100';
+        btn.textContent = String(day);
+        btn.addEventListener('click', () => { setDateValue(ymd); closeModal(dateModalId); });
+        container.appendChild(btn);
+      }
+    }
+    function calPrev() { calCurrent = new Date(calCurrent.getFullYear(), calCurrent.getMonth() - 1, 1); renderCalendar(); }
+    function calNext() { calCurrent = new Date(calCurrent.getFullYear(), calCurrent.getMonth() + 1, 1); renderCalendar(); }
+
+    function buildPayload() {
+      const status = getRadio('status') === '1';
+      const notifyLbl = document.getElementById('notifyDropdownLabel');
+      const notify_route = (notifyLbl && notifyLbl.dataset ? (notifyLbl.dataset.value || '') : '');
+      const currencyLbl = document.getElementById('currencyDropdownLabel');
+      const currency = (currencyLbl && currencyLbl.dataset ? (currencyLbl.dataset.value || '') : '');
+      const billCycleLbl = document.getElementById('billCycleDropdownLabel');
+      const bill_cycle = (billCycleLbl && billCycleLbl.dataset ? (billCycleLbl.dataset.value || '') : '');
+      const priceValue = $('price').value || '0';
+      const leadTimeValue = $('lead_time').value || '0';
+      return {
+        id: editingId || undefined,
+        title: $('title').value || '',
+        price: parseFloat(priceValue) || 0,
+        currency: currency,
+        bill_cycle: bill_cycle,
+        start_date: $('start_date').value || '',
+        category: $('category').value || '',
+        lead_time: String(parseInt(leadTimeValue) || 0),
+        status,
+        notify_route,
+      };
+    }
+
+    function showError(el, msg, errEl) {
+      if (!el || !errEl) return;
+      el.classList.add('border-red-500', 'focus:ring-red-500', 'focus:border-red-500');
+      errEl.textContent = msg || '';
+      errEl.classList.remove('hidden');
+    }
+    function clearError(el, errEl) {
+      if (!el || !errEl) return;
+      el.classList.remove('border-red-500', 'focus:ring-red-500', 'focus:border-red-500');
+      errEl.textContent = '';
+      errEl.classList.add('hidden');
+    }
+    
+    function validateRequired() {
+      let ok = true;
+      const titleEl = $('title');
+      const priceEl = $('price');
+      const categoryEl = $('category');
+      const startDateEl = $('start_date');
+      const leadTimeEl = $('lead_time');
+      const errTitle = $('err-title');
+      const errPrice = $('err-price');
+      const errCurrency = $('err-currency');
+      const errCategory = $('err-category');
+      const errBillCycle = $('err-bill-cycle');
+      const errStartDate = $('err-start-date');
+      const errLeadTime = $('err-lead-time');
+      
+      clearError(titleEl, errTitle);
+      clearError(priceEl, errPrice);
+      clearError(categoryEl, errCategory);
+      clearError(startDateEl, errStartDate);
+      clearError(leadTimeEl, errLeadTime);
+      
+      if (!(titleEl.value || '').trim()) { showError(titleEl, '请填写标题', errTitle); ok = false; }
+      if (!(priceEl.value || '').trim() || parseFloat(priceEl.value) < 0) { showError(priceEl, '请填写有效的价格', errPrice); ok = false; }
+      
+      // 验证货币下拉
+      const currencyLbl = document.getElementById('currencyDropdownLabel');
+      const currency = (currencyLbl && currencyLbl.dataset ? (currencyLbl.dataset.value || '') : '');
+      if (!currency) {
+        if (errCurrency) { errCurrency.textContent = '请选择货币'; errCurrency.classList.remove('hidden'); }
+        $('currencyDropdownBtn') && $('currencyDropdownBtn').focus();
+        ok = false;
+      } else {
+        if (errCurrency) { errCurrency.classList.add('hidden'); errCurrency.textContent = ''; }
+      }
+      
+      // 验证账单周期下拉
+      const billCycleLbl = document.getElementById('billCycleDropdownLabel');
+      const bill_cycle = (billCycleLbl && billCycleLbl.dataset ? (billCycleLbl.dataset.value || '') : '');
+      if (!bill_cycle) {
+        if (errBillCycle) { errBillCycle.textContent = '请选择账单周期'; errBillCycle.classList.remove('hidden'); }
+        $('billCycleDropdownBtn') && $('billCycleDropdownBtn').focus();
+        ok = false;
+      } else {
+        if (errBillCycle) { errBillCycle.classList.add('hidden'); errBillCycle.textContent = ''; }
+      }
+      
+      if (!(categoryEl.value || '').trim()) { showError(categoryEl, '请填写分类', errCategory); ok = false; }
+      if (!(startDateEl.value || '').trim()) { showError(startDateEl, '请选择开始日期', errStartDate); ok = false; }
+      if (!(leadTimeEl.value || '').trim() || parseInt(leadTimeEl.value) < 1) { showError(leadTimeEl, '请填写有效的提前提醒天数（至少1天）', errLeadTime); ok = false; }
+      
+      // 通知通道必选
+      const notify = (document.getElementById('notifyDropdownLabel').dataset.value || '');
+      const errNotify = $('err-notify-route');
+      if (errNotify) { errNotify.classList.add('hidden'); errNotify.textContent = ''; }
+      if (!notify) {
+        if (errNotify) { errNotify.textContent = '请选择通知通道'; errNotify.classList.remove('hidden'); }
+        $('notifyDropdownBtn') && $('notifyDropdownBtn').focus();
+        ok = false;
+      }
+      return ok;
+    }
+
+    // 简单请求封装
+    async function apiRequest(path, options) {
+      const res = await fetch(`${API_BASE}${path}`, {
+        headers: { 'Content-Type': 'application/json' },
+        ...options,
+      });
+      let data = null;
+      try { data = await res.json(); } catch (e) { }
+      if (!res.ok) {
+        const msg = (data && (data.message || data.detail)) || `HTTP ${res.status}`;
+        throw new Error(msg);
+      }
+      return data;
+    }
+
+    // 底部错误提示
+    const actionErrId = 'err-action';
+    (function ensureActionErr() {
+      let el = document.getElementById(actionErrId);
+      if (!el) {
+        const p = document.createElement('p');
+        p.id = actionErrId;
+        p.className = 'mt-2 text-sm text-red-600 hidden';
+        document.querySelector('#subscribeForm .flex.items-center.gap-4')?.appendChild(p);
+      }
+    })();
+    function showActionError(msg) {
+      const el = document.getElementById(actionErrId);
+      if (el) { el.textContent = msg || '操作失败'; el.classList.remove('hidden'); }
+    }
+    function clearActionError() {
+      const el = document.getElementById(actionErrId);
+      if (el) { el.textContent = ''; el.classList.add('hidden'); }
+    }
+
+    $('btnSave').addEventListener('click', async () => {
+      clearActionError();
+      if (!validateRequired()) return;
+      const payload = buildPayload();
+      const isUpdate = !!payload.id;
+      const btn = $('btnSave');
+      const prev = btn.textContent;
+      btn.disabled = true; btn.textContent = isUpdate ? '保存中...' : '创建中...';
+      try {
+        if (isUpdate) {
+          await apiRequest(`/subscribe/${encodeURIComponent(payload.id)}`, { method: 'PUT', body: JSON.stringify(payload) });
+        } else {
+          await apiRequest('/subscribe', { method: 'POST', body: JSON.stringify(payload) });
+        }
+        // 成功后返回列表
+        location.href = 'subscribe.html';
+      } catch (e) {
+        showActionError((e && e.message) || '保存失败');
+      } finally {
+        btn.disabled = false; btn.textContent = prev;
+      }
+    });
+
+    // 拉取通知通道并渲染为自定义下拉
+    async function loadNotifyRoutes() {
+      try {
+        const res = await fetch('/api/plugins/reminder/notify_route');
+        const data = await res.json();
+        const list = (data && Array.isArray(data.data)) ? data.data : [];
+        const options = list.map(it => ({ value: String(it.value), label: String(it.label || it.value) }));
+        const menu = document.getElementById('notifyDropdownOptions');
+        const labelEl = document.getElementById('notifyDropdownLabel');
+        const menuWrap = document.getElementById('notifyDropdownMenu');
+        const btn = document.getElementById('notifyDropdownBtn');
+        buildMenuOptions(menu, options, (value, label) => {
+          if (labelEl) { labelEl.textContent = label; labelEl.dataset.value = value; }
+          if (menuWrap) menuWrap.classList.add('hidden');
+        });
+        if (btn && menuWrap) {
+          btn.addEventListener('click', (e) => { e.stopPropagation(); menuWrap.classList.toggle('hidden'); });
+        }
+        if (presetNotifyRoute && labelEl) {
+          const preset = options.find(o => o.value === presetNotifyRoute);
+          labelEl.textContent = (preset && preset.label) || '请选择';
+          labelEl.dataset.value = presetNotifyRoute;
+        }
+      } catch (e) {
+        // ignore
+      }
+    }
+    loadNotifyRoutes();
+
+    // 点击页面空白处关闭所有下拉
+    function isInside(container, target) {
+      return container && (container === target || container.contains(target));
+    }
+    document.addEventListener('click', (e) => {
+      const t = e.target;
+      const notifyMenu = document.getElementById('notifyDropdownMenu');
+      const notifyBtn = document.getElementById('notifyDropdownBtn');
+      if (notifyMenu && !notifyMenu.classList.contains('hidden') && !isInside(notifyMenu, t) && !isInside(notifyBtn, t)) {
+        notifyMenu.classList.add('hidden');
+      }
+      const currencyMenu = document.getElementById('currencyDropdownMenu');
+      const currencyBtn = document.getElementById('currencyDropdownBtn');
+      if (currencyMenu && !currencyMenu.classList.contains('hidden') && !isInside(currencyMenu, t) && !isInside(currencyBtn, t)) {
+        currencyMenu.classList.add('hidden');
+      }
+      const billCycleMenu = document.getElementById('billCycleDropdownMenu');
+      const billCycleBtn = document.getElementById('billCycleDropdownBtn');
+      if (billCycleMenu && !billCycleMenu.classList.contains('hidden') && !isInside(billCycleMenu, t) && !isInside(billCycleBtn, t)) {
+        billCycleMenu.classList.add('hidden');
+      }
+    });
+  </script>
+  <!-- 日期选择对话框 -->
+  <div id="datePickerModal" class="hidden fixed inset-0 z-50">
+    <div class="absolute inset-0 bg-black/50" onclick="closeModal('datePickerModal')"></div>
+    <div class="absolute inset-0 flex items-center justify-center p-4">
+      <div data-theme-container class="w-full max-w-md rounded-xl shadow-lg bg-white text-gray-900" data-theme="light">
+        <div class="px-5 pt-5 flex items-center justify-between">
+          <button type="button" class="px-3 py-1 rounded border border-gray-300 flex items-center justify-center"
+            onclick="calPrev()">
+            <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
+              <path fill-rule="evenodd"
+                d="M12.707 5.293a1 1 0 010 1.414L9.414 10l3.293 3.293a1 1 0 01-1.414 1.414l-4-4a1 1 0 010-1.414l4-4a1 1 0 011.414 0z"
+                clip-rule="evenodd" />
+            </svg>
+          </button>
+          <h3 id="calendarHeader" class="text-base font-semibold"></h3>
+          <button type="button" class="px-3 py-1 rounded border border-gray-300 flex items-center justify-center"
+            onclick="calNext()">
+            <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
+              <path fill-rule="evenodd"
+                d="M7.293 14.707a1 1 0 010-1.414L10.586 10 7.293 6.707a1 1 0 011.414-1.414l4 4a1 1 0 010 1.414l-4 4a1 1 0 01-1.414 0z"
+                clip-rule="evenodd" />
+            </svg>
+          </button>
+        </div>
+        <div class="px-5 mt-3 grid grid-cols-7 gap-2 text-xs text-gray-500">
+          <div>日</div>
+          <div>一</div>
+          <div>二</div>
+          <div>三</div>
+          <div>四</div>
+          <div>五</div>
+          <div>六</div>
+        </div>
+        <div id="calendarGrid" class="px-5 py-5 grid grid-cols-7 gap-2"></div>
+        <div class="px-5 pb-5 flex items-center justify-end">
+          <button type="button" class="px-4 h-10 rounded-lg border bg-white border-gray-300"
+            onclick="closeModal('datePickerModal')">取消</button>
+        </div>
+      </div>
+    </div>
+  </div>
+</body>
+
+</html>
+

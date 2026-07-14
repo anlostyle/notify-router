@@ -1,0 +1,96 @@
+{
+  "id": "nextfind_assistant",
+  "name": "NextFind 企业微信助手",
+  "description": "通过企业微信搜索、查看资源、订阅和转存 NextFind 资源",
+  "author": "Codex",
+  "logo": "",
+  "thumbnailurl": "",
+  "version": "0.2.0",
+  "documentation": "",
+  "path": "/nextfind_assistant",
+  "configField": [
+    {
+      "fieldName": "nextfind_base_url",
+      "fieldType": "string",
+      "label": "NextFind OpenAPI 地址",
+      "helpText": "例如：https://nextfind.example.com/api/openapi",
+      "defaultValue": ""
+    },
+    {
+      "fieldName": "nextfind_api_key",
+      "fieldType": "string",
+      "label": "NextFind API Key",
+      "helpText": "NextFind 系统设置里的 OpenAPI Key",
+      "defaultValue": ""
+    },
+    {
+      "fieldName": "nextfind_log_notify_users",
+      "fieldType": "string",
+      "label": "订阅通知接收人",
+      "helpText": "企业微信 touser，留空默认 @all",
+      "defaultValue": ""
+    },
+    {
+      "fieldName": "nextfind_log_poll_seconds",
+      "fieldType": "string",
+      "label": "订阅通知轮询秒数",
+      "helpText": "留空默认 60，最小 10",
+      "defaultValue": ""
+    },
+    {
+      "fieldName": "nextfind_log_lines",
+      "fieldType": "string",
+      "label": "每次读取日志行数",
+      "helpText": "留空默认 500，日志量大可调高",
+      "defaultValue": ""
+    },
+    {
+      "fieldName": "qywx_base_url",
+      "fieldType": "string",
+      "label": "企业微信 API 地址",
+      "helpText": "官方地址：https://qyapi.weixin.qq.com",
+      "defaultValue": ""
+    },
+    {
+      "fieldName": "sCorpID",
+      "fieldType": "string",
+      "label": "企业微信 CorpID",
+      "defaultValue": ""
+    },
+    {
+      "fieldName": "sCorpsecret",
+      "fieldType": "string",
+      "label": "企业微信 Secret",
+      "defaultValue": ""
+    },
+    {
+      "fieldName": "sAgentid",
+      "fieldType": "string",
+      "label": "企业微信 AgentID",
+      "defaultValue": ""
+    },
+    {
+      "fieldName": "sToken",
+      "fieldType": "string",
+      "label": "企业微信 Token",
+      "defaultValue": ""
+    },
+    {
+      "fieldName": "sEncodingAESKey",
+      "fieldType": "string",
+      "label": "企业微信 EncodingAESKey",
+      "defaultValue": ""
+    }
+  ],
+  "helpTextField": [
+    { "fieldType": "title", "value": "企业微信回调地址" },
+    { "fieldType": "code", "value": "{site_url}/api/plugins/nextfind_assistant/chat" },
+    { "fieldType": "title", "value": "命令" },
+    { "fieldType": "text", "value": "搜 阿凡达" },
+    { "fieldType": "text", "value": "1：搜索结果阶段查看资源；资源列表阶段直接转存" },
+    { "fieldType": "text", "value": "订阅1：订阅第 1 个搜索结果" },
+    { "fieldType": "text", "value": "订阅列表：查看当前订阅" },
+    { "fieldType": "title", "value": "订阅通知" },
+    { "fieldType": "text", "value": "轮询 NextFind /logs，发现 NextEmby OpenAPI 新增订阅后推送企业微信" }
+  ]
+}

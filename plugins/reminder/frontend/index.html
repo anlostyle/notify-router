@@ -1,0 +1,210 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Reminder 管理</title>
+    <script>
+      try { tailwind = tailwind || {}; } catch (e) { /* ignore */ }
+      try { tailwind.config = Object.assign({}, tailwind.config || {}, { darkMode: 'class' }); } catch (e) { /* ignore */ }
+    </script>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+      .bg-background { background-color: #030816 !important; }
+    </style>
+    <script>
+      (function() {
+        function syncThemeToModals(theme) {
+          var t = (theme || '').toString().toLowerCase() === 'dark' ? 'dark' : 'light';
+          // 同步所有带有 data-theme-container 属性的元素
+          var containers = document.querySelectorAll('[data-theme-container]');
+          containers.forEach(function(container) {
+            container.setAttribute('data-theme', t);
+          });
+        }
+        
+        function updateTheme(theme) {
+          var t = (theme || '').toString().toLowerCase() === 'dark' ? 'dark' : 'light';
+          var root = document.documentElement;
+          if (t === 'dark') root.classList.add('dark'); else root.classList.remove('dark');
+          try { root.setAttribute('data-theme', t); } catch (e) {}
+          root.style.colorScheme = t;
+          // 同步 body 基础色（先清除再设置，避免遗留）
+          var body = document.body;
+          if (!body) return;
+          if (t === 'dark') {
+            body.classList.remove('text-gray-900');
+            body.classList.add('bg-background','text-gray-100');
+          } else {
+            body.classList.remove('bg-background','text-gray-100');
+            body.classList.add('text-gray-900');
+          }
+          try { localStorage.setItem('nhtheme', t); } catch (e) {}
+          window.nhtheme = t;
+          // 同步弹窗主题
+          syncThemeToModals(t);
+          // 同步 iframe 主题
+          syncThemeToIframes(t);
+          try { console.log('[reminder:index] theme updated ->', t, 'html.classes=', root.className, 'body.classes=', (body&&body.className)); } catch (e) {}
+        }
+        
+        function syncThemeToIframes(theme) {
+          var t = (theme || '').toString().toLowerCase() === 'dark' ? 'dark' : 'light';
+          var iframes = document.querySelectorAll('iframe');
+          iframes.forEach(function(iframe) {
+            try {
+              if (iframe.contentWindow && iframe.contentWindow.postMessage) {
+                iframe.contentWindow.postMessage({ type: 'injectTheme', theme: t }, '*');
+              }
+            } catch (e) {}
+          });
+        }
+        
+        function getThemeFromParent() {
+          try { if (window.parent && window.parent !== window) { var t = window.parent.nhtheme; if (t === 'light' || t === 'dark') return t; } } catch (e) {}
+          try { var s = localStorage.getItem('nhtheme'); if (s === 'light' || s === 'dark') return s; } catch (e) {}
+          return 'light';
+        }
+        window.addEventListener('message', function(event) {
+          if (!event || !event.data) return;
+          var type = (event.data.type || '').toString();
+          if (type === 'injectTheme' || type.toLowerCase() === 'inject-theme') {
+            var theme = (event.data.theme || (event.data.payload && event.data.payload.theme) || '').toString().toLowerCase();
+            if (theme === 'light' || theme === 'dark') updateTheme(theme);
+          }
+        });
+        document.addEventListener('DOMContentLoaded', function(){ updateTheme(getThemeFromParent()); });
+      })();
+    </script>
+  </head>
+  <body class="bg-white text-gray-900">
+    <!-- 顶部选项卡导航 -->
+    <header class="border-b data-[theme=light]:bg-white data-[theme=light]:border-gray-200 data-[theme=dark]:bg-gray-900 data-[theme=dark]:border-gray-800">
+      <div class="w-full px-6">
+        <div class="flex space-x-1" role="tablist">
+          <button
+            id="tab-reminder"
+            role="tab"
+            aria-selected="true"
+            class="px-6 py-4 text-sm font-medium border-b-2 border-blue-500 text-blue-600 data-[theme=dark]:text-blue-400 data-[theme=dark]:border-blue-400 transition-colors"
+            onclick="switchTab('reminder')"
+          >
+            Reminder 列表
+          </button>
+          <button
+            id="tab-subscribe"
+            role="tab"
+            aria-selected="false"
+            class="px-6 py-4 text-sm font-medium border-b-2 border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300 data-[theme=dark]:text-gray-400 data-[theme=dark]:hover:text-gray-300 transition-colors"
+            onclick="switchTab('subscribe')"
+          >
+            Subscribe 列表
+          </button>
+        </div>
+      </div>
+    </header>
+
+    <!-- 内容区域 -->
+    <main class="w-full" style="height: calc(100vh - 60px); overflow: hidden;">
+      <div id="content-reminder" class="w-full h-full">
+        <iframe
+          id="iframe-reminder"
+          src="reminder.html"
+          class="w-full h-full border-0"
+          frameborder="0"
+          title="Reminder 列表"
+          loading="lazy"
+        ></iframe>
+      </div>
+      <div id="content-subscribe" class="w-full h-full hidden">
+        <iframe
+          id="iframe-subscribe"
+          src="subscribe.html"
+          class="w-full h-full border-0"
+          frameborder="0"
+          title="Subscribe 列表"
+          loading="lazy"
+        ></iframe>
+      </div>
+    </main>
+
+    <script>
+      function switchTab(tabName) {
+        // 更新选项卡状态
+        const tabs = ['reminder', 'subscribe'];
+        tabs.forEach(tab => {
+          const tabBtn = document.getElementById(`tab-${tab}`);
+          const content = document.getElementById(`content-${tab}`);
+          
+          if (tab === tabName) {
+            // 激活当前选项卡
+            tabBtn.setAttribute('aria-selected', 'true');
+            tabBtn.classList.remove('border-transparent', 'text-gray-500', 'data-[theme=dark]:text-gray-400');
+            tabBtn.classList.add('border-blue-500', 'text-blue-600', 'data-[theme=dark]:text-blue-400', 'data-[theme=dark]:border-blue-400');
+            content.classList.remove('hidden');
+            
+            // 同步主题到 iframe
+            if (window.nhtheme) {
+              const iframe = content.querySelector('iframe');
+              if (iframe && iframe.contentWindow) {
+                try {
+                  iframe.contentWindow.postMessage({ type: 'injectTheme', theme: window.nhtheme }, '*');
+                } catch (e) {}
+              }
+            }
+          } else {
+            // 取消激活其他选项卡
+            tabBtn.setAttribute('aria-selected', 'false');
+            tabBtn.classList.remove('border-blue-500', 'text-blue-600', 'data-[theme=dark]:text-blue-400', 'data-[theme=dark]:border-blue-400');
+            tabBtn.classList.add('border-transparent', 'text-gray-500', 'data-[theme=dark]:text-gray-400');
+            content.classList.add('hidden');
+          }
+        });
+      }
+
+      // 页面加载完成后同步主题到当前显示的 iframe
+      document.addEventListener('DOMContentLoaded', function() {
+        // 延迟同步主题，确保 iframe 已加载
+        function syncThemeToActiveIframe() {
+          const activeTab = document.querySelector('[role="tab"][aria-selected="true"]');
+          if (activeTab) {
+            const tabId = activeTab.id.replace('tab-', '');
+            const activeContent = document.getElementById(`content-${tabId}`);
+            if (activeContent && !activeContent.classList.contains('hidden') && window.nhtheme) {
+              const iframe = activeContent.querySelector('iframe');
+              if (iframe) {
+                iframe.addEventListener('load', function() {
+                  try {
+                    if (iframe.contentWindow) {
+                      iframe.contentWindow.postMessage({ type: 'injectTheme', theme: window.nhtheme }, '*');
+                    }
+                  } catch (e) {}
+                });
+                // 如果 iframe 已经加载，立即同步
+                try {
+                  if (iframe.contentWindow && iframe.contentDocument && iframe.contentDocument.readyState === 'complete') {
+                    iframe.contentWindow.postMessage({ type: 'injectTheme', theme: window.nhtheme }, '*');
+                  }
+                } catch (e) {}
+              }
+            }
+          }
+        }
+        
+        setTimeout(syncThemeToActiveIframe, 300);
+        
+        // 监听所有 iframe 的加载事件
+        const iframes = document.querySelectorAll('iframe');
+        iframes.forEach(function(iframe) {
+          iframe.addEventListener('load', function() {
+            if (window.nhtheme && iframe.contentWindow) {
+              try {
+                iframe.contentWindow.postMessage({ type: 'injectTheme', theme: window.nhtheme }, '*');
+              } catch (e) {}
+            }
+          });
+        });
+      });
+    </script>
+  </body>
+</html>

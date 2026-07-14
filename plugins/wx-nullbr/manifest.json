@@ -1,0 +1,106 @@
+{
+    "id": "wx-nullbr",
+    "name": "微信资源搜索",
+    "description": "通过企业微信接入115资源搜索",
+    "author": "htnanako",
+    "logo": "https://nanako-1253183981.cos.ap-guangzhou.myqcloud.com/project/notifyhub/coverimg/wx_nullbr.png",
+    "thumbnailurl": "https://nanako-1253183981.cos.ap-guangzhou.myqcloud.com/project/notifyhub/coverimg/wx_nullbr_thumb.png",
+    "version": "0.0.1",
+    "documentation": "",
+    "path": "/wx-nullbr",
+    "configField": [
+        {
+            "fieldName": "qywx_base_url",
+            "fieldType": "string",
+            "label": "企业微信API地址",
+            "helpText": "企业微信API的基础URL地址，官方地址：https://qyapi.weixin.qq.com",
+            "defaultValue": "https://qyapi.weixin.qq.com"
+        },
+        {
+            "fieldName": "sCorpID",
+            "fieldType": "string",
+            "label": "企业微信CorpID",
+            "helpText": "企业微信的CorpID",
+            "defaultValue": ""
+        },
+        {
+            "fieldName": "sCorpsecret",
+            "fieldType": "string",
+            "label": "企业微信Secret",
+            "helpText": "企业微信应用的Secret",
+            "defaultValue": ""
+        },
+        {
+            "fieldName": "sAgentid",
+            "fieldType": "string",
+            "label": "企业微信AgentID",
+            "helpText": "企业微信应用的AgentID",
+            "defaultValue": ""
+        },
+        {
+            "fieldName": "sToken",
+            "fieldType": "string",
+            "label": "企业微信Token",
+            "helpText": "企业微信接收消息的Token",
+            "defaultValue": ""
+        },
+        {
+            "fieldName": "sEncodingAESKey",
+            "fieldType": "string",
+            "label": "企业微信EncodingAESKey",
+            "helpText": "企业微信消息加密的EncodingAESKey",
+            "defaultValue": ""
+        },
+        {
+            "fieldName": "nullbr_appid",
+            "fieldType": "string",
+            "label": "nullbr网站的 appid",
+            "helpText": "nullbr网站的 appid,到这里申请 https://nullbr.online/manage",
+            "defaultValue": ""
+        },
+        {
+            "fieldName": "nullbr_apikey",
+            "fieldType": "string",
+            "label": "nullbr网站的 apikey",
+            "helpText": "nullbr网站的 apikey,到这里获取 https://nullbr.online/manage",
+            "defaultValue": ""
+        },
+        {
+            "fieldName": "tmdb_api_key",
+            "fieldType": "string",
+            "label": "TMDB API Read Access Token",
+            "helpText": "TMDB 账户设置中的 API Read Access Token",
+            "defaultValue": ""
+        },
+        {
+            "fieldName": "media302_url",
+            "fieldType": "string",
+            "label": "Media302 服务地址",
+            "helpText": "Media302 服务的基础UR，不带/strm，例如：https://media302.domain.com",
+            "defaultValue": ""
+        },
+        {
+            "fieldName": "media302_token",
+            "fieldType": "string",
+            "label": "Media302 Token",
+            "helpText": "调用 Media302 保存分享接口所需的 token",
+            "defaultValue": ""
+        },
+        {
+            "fieldName": "media302_name",
+            "fieldType": "string",
+            "label": "目录转移设置中设置的名字",
+            "helpText": "",
+            "defaultValue": "自动整理并转移到媒体库文件夹"
+        },
+        {
+            "fieldName": "folder",
+            "fieldType": "string",
+            "label": "115转存目录",
+            "helpText": "保存115分享的目标目录，默认“转存监控”",
+            "defaultValue": "转存监控"
+        }
+    ],
+    "helpTextField": [],
+    "frontend_page": {}
+}

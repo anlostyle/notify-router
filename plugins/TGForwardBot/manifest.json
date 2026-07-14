@@ -1,0 +1,59 @@
+{
+    "id": "TGForwardBot",
+    "name": "TG私聊机器人",
+    "description": "TG私聊机器人",
+    "author": "htnanako",
+    "logo": "https://nanako-1253183981.cos.ap-guangzhou.myqcloud.com/project/notifyhub/coverimg/tgforwardbot_logo.png",
+    "thumbnailurl": "https://nanako-1253183981.cos.ap-guangzhou.myqcloud.com/project/notifyhub/coverimg/tgforwardbot_thumb.png",
+    "version": "0.0.1",
+    "documentation": "",
+    "path": "/TGForwardBot",
+    "configField": [
+        {
+            "fieldName": "tgbot_token",
+            "fieldType": "string",
+            "label": "TG Bot Token",
+            "helpText": "TG Bot Token，获取方式：https://t.me/BotFather",
+            "defaultValue": "",
+            "required": true
+        },
+        {
+            "fieldName": "manager_chatid",
+            "fieldType": "string",
+            "label": "管理员ChatID",
+            "helpText": "管理员ChatID",
+            "defaultValue": "",
+            "required": true
+        },
+        {
+            "fieldName": "proxy",
+            "fieldType": "string",
+            "label": "代理地址",
+            "helpText": "代理地址",
+            "defaultValue": "",
+            "required": false
+        },
+        {
+            "fieldName": "block_keywords",
+            "fieldType": "string",
+            "label": "封禁关键词",
+            "helpText": "封禁关键词，多个关键词用英文逗号分隔",
+            "defaultValue": "",
+            "required": false
+        }
+    ],
+    "helpTextField": [
+        {"fieldType": "title", "value": "功能介绍"},
+        {"fieldType": "text", "value": "实现用户与管理员之间的双向私聊通信。用户发送消息给管理员，管理员可以回复用户。"},
+        {"fieldType": "title", "value": "配置说明"},
+        {"fieldType": "text", "value": "TG Bot Token：通过 @BotFather 获取"},
+        {"fieldType": "text", "value": "管理员ChatID：管理员的Telegram用户ID"},
+        {"fieldType": "text", "value": "代理地址：可选，如需代理访问Telegram API时填写"},
+        {"fieldType": "text", "value": "封禁关键词：可选，多个关键词用英文逗号分隔，包含关键词的消息不会被转发"},
+        {"fieldType": "title", "value": "使用说明"},
+        {"fieldType": "text", "value": "用户：发送文本或媒体消息给管理员"},
+        {"fieldType": "text", "value": "管理员：回复机器人转发的用户消息即可回复用户"},
+        {"fieldType": "text", "value": "封禁功能：在用户消息中点击「封禁用户」按钮，使用 /block_list 管理封禁列表"}
+    ],
+    "frontend_page": {}
+}

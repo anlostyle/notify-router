@@ -102,6 +102,22 @@ The project can read the existing `/data/conf`, `/data/db/main.db`, and
 `/data/plugins` layout. See [COMPATIBILITY.md](COMPATIBILITY.md) for the exact
 contract and use the scripts under `scripts/` to validate or copy legacy data.
 
+## Optional plugins
+
+Sanitized optional plugins are provided under `plugins/`. They contain no
+runtime configuration or credentials and are not installed automatically:
+
+```bash
+mkdir -p data/plugins
+cp -R plugins/* data/plugins/
+docker compose restart
+```
+
+Open the plugin settings page after restart and enter your own service URLs,
+API keys, Enterprise WeChat credentials, routes, and keywords. See
+[`plugins/README.md`](plugins/README.md) for the included plugins and required
+configuration.
+
 ## Development
 
 ```bash

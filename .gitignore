@@ -6,5 +6,7 @@ __pycache__/
 data/
 .env
 dist/
+plugins/**/__pycache__/
+plugins/**/plugin_state.json
 *.db-wal
 *.db-shm
