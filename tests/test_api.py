@@ -11,8 +11,27 @@ def test_notify_api_keeps_legacy_response_shape(tmp_path, monkeypatch):
         {
             "app": {},
             "channels": [{"name": "test", "type": "webhook", "config": {"url": "http://127.0.0.1:9"}}],
-            "routes": [{"route_id": "r1", "route_name": "Route", "channel_name": ["test"], "active": True}],
+            "routes": [
+                {
+                    "route_id": "r1",
+                    "route_name": "Route",
+                    "channel_name": ["test"],
+                    "bind_template": ["movie", "series"],
+                    "active": True,
+                }
+            ],
         }
+    )
+    main.store.templates_path.write_text(
+        json.dumps(
+            {
+                "template": [
+                    {"name": "movie", "type": "Emby.LibraryNewMovie", "title": "{{ title }}", "content": "movie"},
+                    {"name": "series", "type": "Emby.LibraryNewSeries", "title": "{{ title }}", "content": "series"},
+                ]
+            }
+        ),
+        encoding="utf-8",
     )
     with TestClient(main.app) as client:
         response = client.post("/api/service/notify", json={"route_id": "r1", "title": "t", "content": "c"})
@@ -48,3 +67,17 @@ def test_notify_api_keeps_legacy_response_shape(tmp_path, monkeypatch):
         )
         assert response.status_code == 200
         assert response.json()["success"] is True
+
+        for item, expected_id in (
+            ({"Id": "movie/1", "Type": "Movie", "Name": "Film"}, "movie%2F1"),
+            ({"Id": "episode/1", "SeriesId": "series/1", "Type": "Episode", "Name": "Episode"}, "series%2F1"),
+        ):
+            response = client.post(
+                "/api/service/emby/notify/r1",
+                params={"emby_url": "https://tv.example/"},
+                json={"Event": "library.new", "Item": item},
+            )
+            assert response.status_code == 200
+            with main.store.connect() as db:
+                image = db.execute("SELECT push_img_url FROM outbox ORDER BY rowid DESC LIMIT 1").fetchone()[0]
+            assert image == f"https://tv.example/emby/Items/{expected_id}/Images/Primary"

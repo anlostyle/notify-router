@@ -7,6 +7,7 @@ from base64 import urlsafe_b64decode, urlsafe_b64encode
 from collections import deque
 from contextlib import asynccontextmanager
 from pathlib import Path
+from urllib.parse import quote
 
 import uvicorn
 from fastapi import Body, Cookie, Depends, FastAPI, Header, HTTPException, Request, Response
@@ -325,13 +326,20 @@ async def emby_compatible(route_id: str, request: Request):
         event, template_type, context = parse_emby(payload)
     except (ValueError, TypeError) as exc:
         return notify_error(str(exc))
+    item = payload.get("Item") or {}
+    image_id = item.get("SeriesId") if item.get("Type") in {"Episode", "Season"} else item.get("Id")
+    image_id = image_id or item.get("Id")
+    emby_url = str(request.query_params.get("emby_url") or "").rstrip("/")
+    push_img_url = payload.get("push_img_url")
+    if not push_img_url and image_id and emby_url.startswith(("http://", "https://")):
+        push_img_url = f"{emby_url}/emby/Items/{quote(str(image_id), safe='')}/Images/Primary"
     return enqueue_event(
         route_id,
         event,
         template_type,
         context,
         "Emby事件通知已进入发送队列",
-        payload.get("push_img_url"),
+        push_img_url,
         payload.get("push_link_url"),
     )
 
