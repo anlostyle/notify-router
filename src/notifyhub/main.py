@@ -2,6 +2,7 @@ import hmac
 import json
 import logging
 import os
+import threading
 import time
 from base64 import urlsafe_b64decode, urlsafe_b64encode
 from collections import deque
@@ -55,10 +56,16 @@ worker = DeliveryWorker(store)
 security = HTTPBasic(auto_error=False)
 MASK = "••••••"
 SESSION_COOKIE = "notify_session"
+LOGIN_FAILURES = deque(maxlen=1000)
+LOGIN_LOCK = threading.Lock()
 
 
 @asynccontextmanager
 async def lifespan(_app):
+    if not os.environ.get("NH_PASSWORD") or os.environ.get("NH_PASSWORD") == "change-me":
+        logger.warning("NH_PASSWORD is missing or still uses the example value")
+    if not os.environ.get("SESSION_SECRET"):
+        logger.warning("SESSION_SECRET is unset; session signing falls back to NH_PASSWORD")
     worker.start()
     plugin_tasks = enabled(os.environ.get("PLUGIN_TASKS_ENABLED", "1"))
     if plugin_tasks:
@@ -105,6 +112,27 @@ def _valid_admin(username, password):
     expected_user = os.environ.get("NH_USER", "admin")
     expected_password = os.environ.get("NH_PASSWORD", "")
     return hmac.compare_digest(username or "", expected_user) and hmac.compare_digest(password or "", expected_password)
+
+
+def _login_blocked(client):
+    now = time.monotonic()
+    with LOGIN_LOCK:
+        recent = [(host, stamp) for host, stamp in LOGIN_FAILURES if stamp > now - 300]
+        LOGIN_FAILURES.clear()
+        LOGIN_FAILURES.extend(recent)
+        return sum(host == client for host, _ in recent) >= 10
+
+
+def _login_failed(client):
+    with LOGIN_LOCK:
+        LOGIN_FAILURES.append((client, time.monotonic()))
+
+
+def _login_succeeded(client):
+    with LOGIN_LOCK:
+        recent = [(host, stamp) for host, stamp in LOGIN_FAILURES if host != client]
+        LOGIN_FAILURES.clear()
+        LOGIN_FAILURES.extend(recent)
 
 
 def _session_token(username, expires=None):
@@ -248,9 +276,14 @@ def healthz():
 
 
 @app.post("/api/admin/login")
-def admin_login(payload: LoginRequest, response: Response):
+def admin_login(payload: LoginRequest, response: Response, request: Request):
+    client = request.client.host if request.client else "unknown"
+    if _login_blocked(client):
+        raise HTTPException(429, "登录尝试过多，请5分钟后重试", headers={"Retry-After": "300"})
     if not _valid_admin(payload.username, payload.password):
+        _login_failed(client)
         raise HTTPException(401, "用户名或密码错误")
+    _login_succeeded(client)
     response.set_cookie(
         SESSION_COOKIE,
         _session_token(payload.username),
@@ -513,7 +546,12 @@ plugin_manifests = register_builtin_plugins(app, store) + PluginLoader(app, stor
 
 
 def main():
-    uvicorn.run(app, host="0.0.0.0", port=int(os.environ.get("PORT", "5400")))
+    uvicorn.run(
+        app,
+        host="0.0.0.0",
+        port=int(os.environ.get("PORT", "5400")),
+        access_log=enabled(os.environ.get("ACCESS_LOG", "0")),
+    )
 
 
 if __name__ == "__main__":

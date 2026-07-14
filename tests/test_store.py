@@ -1,3 +1,6 @@
+import tarfile
+from datetime import datetime
+
 from notifyhub.store import Store
 
 
@@ -80,3 +83,29 @@ def test_processing_delivery_is_recovered_after_restart(tmp_path):
     assert store.claim_delivery()
     assert store.delivery_status()[0]["status"] == "processing"
     assert Store(tmp_path).delivery_status()[0]["status"] == "retry"
+
+
+def test_maintenance_backs_up_before_pruning_old_history(tmp_path):
+    store = Store(tmp_path)
+    config = legacy_config()
+    config["app"]["record_retention_days"] = 30
+    store.save_config(config)
+    store.enqueue_router("route_sms", "old", "content")
+    item = store.claim_delivery()
+    store.complete_delivery(item)
+    with store.connect() as db:
+        db.execute("UPDATE notify_records SET created_at='2025-01-01 00:00:00'")
+        db.execute("UPDATE outbox SET updated_at='2025-01-01 00:00:00'")
+        db.execute("UPDATE notify_daily_summary SET date='2025-01-01'")
+
+    result = store.maintain(datetime(2026, 7, 14, 3, 0, 0))
+
+    assert result["records"] == result["outbox"] == result["summaries"] == 1
+    with tarfile.open(result["backup"]) as archive:
+        assert set(archive.getnames()) == {
+            "db/main.db",
+            "conf/config.json",
+            "conf/notify_template.json",
+        }
+    assert store.recent_records() == []
+    assert store.delivery_status() == []

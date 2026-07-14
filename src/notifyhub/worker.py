@@ -1,5 +1,6 @@
 import logging
 import threading
+import time
 
 from .channels import send
 
@@ -24,9 +25,23 @@ class DeliveryWorker:
         self._stop.wait(0)
 
     def _run(self):
+        next_maintenance = 0
         while not self._stop.is_set():
             item = self.store.claim_delivery()
             if not item:
+                if time.monotonic() >= next_maintenance:
+                    try:
+                        result = self.store.maintain()
+                        logger.info(
+                            "maintenance complete backup=%s records=%s outbox=%s summaries=%s",
+                            result["backup"],
+                            result["records"],
+                            result["outbox"],
+                            result["summaries"],
+                        )
+                    except Exception:
+                        logger.exception("maintenance failed")
+                    next_maintenance = time.monotonic() + 21600
                 self._stop.wait(0.5)
                 continue
             try:

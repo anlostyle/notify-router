@@ -6,7 +6,7 @@ def test_qywx_news_payload_uses_custom_card_fields():
         {"agentid": "1000021", "touser": "@all", "is_news": False},
         {
             "title": "📨 你收到新短信啦～",
-            "content": "📱 设备：上海移动\n💬 短信内容：test",
+            "content": "📱 设备：测试设备\n💬 短信内容：test",
             "push_img_url": "https://example.com/sms.png",
             "push_link_url": "https://notify.example.com/sms",
         },

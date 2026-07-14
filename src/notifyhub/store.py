@@ -3,10 +3,11 @@ import json
 import re
 import shutil
 import sqlite3
+import tarfile
 import threading
 import time
 import uuid
-from datetime import datetime
+from datetime import date, datetime, timedelta
 from pathlib import Path
 from zoneinfo import ZoneInfo
 
@@ -158,6 +159,78 @@ class Store:
                 (time.time(),),
             )
         self.db_path.chmod(0o600)
+
+    def maintain(self, now=None):
+        now = now or datetime.now(ZoneInfo("Asia/Shanghai")).replace(tzinfo=None)
+        backup = self._daily_backup(now.date())
+        try:
+            retention_days = int(self.config.get("app", {}).get("record_retention_days", 90))
+        except (TypeError, ValueError):
+            retention_days = 90
+        retention_days = max(1, min(retention_days, 3650))
+        cutoff = (now - timedelta(days=retention_days)).isoformat(sep=" ", timespec="microseconds")
+        with self.connect() as db:
+            records = db.execute("DELETE FROM notify_records WHERE created_at < ?", (cutoff,)).rowcount
+            outbox = db.execute(
+                "DELETE FROM outbox WHERE status IN ('sent','failed') AND updated_at < ?",
+                (cutoff,),
+            ).rowcount
+            summaries = db.execute(
+                "DELETE FROM notify_daily_summary WHERE date < ?",
+                (cutoff[:10],),
+            ).rowcount
+            db.execute("PRAGMA optimize")
+        return {"backup": str(backup), "records": records, "outbox": outbox, "summaries": summaries}
+
+    def _daily_backup(self, today=None):
+        today = today or date.today()
+        backup_dir = self.data_dir / "backups"
+        backup_dir.mkdir(parents=True, exist_ok=True)
+        target = backup_dir / f"notify-router-{today.isoformat()}.tar.gz"
+        if not target.exists():
+            database_copy = backup_dir / ".main.db.tmp"
+            archive_copy = backup_dir / ".backup.tar.gz.tmp"
+            database_copy.unlink(missing_ok=True)
+            archive_copy.unlink(missing_ok=True)
+            source = self.connect()
+            destination = sqlite3.connect(database_copy)
+            try:
+                source.backup(destination)
+            finally:
+                destination.close()
+                source.close()
+            try:
+                with tarfile.open(archive_copy, "w:gz", compresslevel=1) as archive:
+                    archive.add(database_copy, arcname="db/main.db")
+                    archive.add(self.config_path, arcname="conf/config.json")
+                    archive.add(self.templates_path, arcname="conf/notify_template.json")
+                archive_copy.replace(target)
+                target.chmod(0o600)
+            finally:
+                database_copy.unlink(missing_ok=True)
+                archive_copy.unlink(missing_ok=True)
+        self._prune_backups(backup_dir)
+        return target
+
+    @staticmethod
+    def _prune_backups(backup_dir):
+        backups = []
+        for path in backup_dir.glob("notify-router-????-??-??.tar.gz"):
+            try:
+                backups.append((date.fromisoformat(path.name[14:24]), path))
+            except ValueError:
+                continue
+        backups.sort(reverse=True)
+        keep = {path for _, path in backups[:7]}
+        weeks = set()
+        for day, path in backups[7:]:
+            week = (day.isocalendar().year, day.isocalendar().week)
+            if week not in weeks and len(weeks) < 4:
+                weeks.add(week)
+                keep.add(path)
+        for _, path in backups:
+            if path not in keep:
+                path.unlink()
 
     @property
     def config(self):

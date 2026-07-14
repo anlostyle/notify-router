@@ -79,3 +79,17 @@ def test_log_and_delivery_errors_hide_embedded_tokens():
     assert "123456:ABC" not in safe
     assert "access_token=secret" not in safe
     assert "Bearer private" not in safe
+
+
+def test_admin_login_is_rate_limited(tmp_path, monkeypatch):
+    monkeypatch.setenv("NH_USER", "admin")
+    monkeypatch.setenv("NH_PASSWORD", "test-password")
+    main = importlib.import_module("notifyhub.main")
+    main.LOGIN_FAILURES.clear()
+    client = TestClient(main.app)
+    for _ in range(10):
+        assert client.post("/api/admin/login", json={"username": "admin", "password": "wrong"}).status_code == 401
+    response = client.post("/api/admin/login", json={"username": "admin", "password": "test-password"})
+    assert response.status_code == 429
+    assert response.headers["retry-after"] == "300"
+    main.LOGIN_FAILURES.clear()
