@@ -7,6 +7,7 @@ not install or configure them automatically.
 | --- | --- | --- |
 | `TGForwardBot` | Telegram private-message relay | Bot Token, administrator Chat ID |
 | `nextfind_assistant` | Search, subscribe, and save NextFind resources through Enterprise WeChat | NextFind OpenAPI, Enterprise WeChat application |
+| `ndu_monitor` | Forward NDU Docker image and GitHub release updates through Notify Router | NDU database mount, notification route |
 | `nsrss` | NodeSeek and DeepFlood RSS keyword monitoring | Sites, keywords, routes, cron |
 | `reminder` | One-time, recurring, and subscription reminders | Notification routes configured in Notify Router |
 | `wx-media302-save` | Save 115 links through Media302 and Enterprise WeChat | Media302 and Enterprise WeChat credentials |
