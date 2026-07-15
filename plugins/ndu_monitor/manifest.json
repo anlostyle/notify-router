@@ -1,7 +1,7 @@
 {
   "id": "ndu_monitor",
   "name": "NDU 更新监控",
-  "description": "读取 NDU 数据库，把 Docker 镜像和 GitHub Release 更新转发到 Notify Router 通道",
+  "description": "直接监控 DockerHub 镜像和 GitHub Release，并通过 Notify Router 发送更新通知",
   "author": "Codex",
   "logo": "",
   "thumbnailurl": "",
@@ -23,18 +23,32 @@
       "defaultValue": ""
     },
     {
-      "fieldName": "ndu_db_path",
+      "fieldName": "images",
+      "fieldType": "text",
+      "label": "Docker 镜像",
+      "helpText": "每行一个，例如 linuxserver/plex:latest",
+      "defaultValue": ""
+    },
+    {
+      "fieldName": "github_repos",
+      "fieldType": "text",
+      "label": "GitHub 仓库",
+      "helpText": "每行一个，例如 owner/repo",
+      "defaultValue": ""
+    },
+    {
+      "fieldName": "github_token",
       "fieldType": "string",
-      "label": "NDU 数据库路径",
-      "helpText": "容器内可读路径，例如 /ndu/db/main.db",
-      "defaultValue": "/ndu/db/main.db"
+      "label": "GitHub Token",
+      "helpText": "可选，用于提高 API 限额",
+      "defaultValue": ""
     },
     {
       "fieldName": "poll_seconds",
       "fieldType": "string",
       "label": "轮询秒数",
-      "helpText": "默认 300，最小 60",
-      "defaultValue": "300"
+      "helpText": "默认 3600，最小 300",
+      "defaultValue": "3600"
     },
     {
       "fieldName": "docker_picurl",
@@ -51,7 +65,7 @@
   ],
   "helpTextField": [
     { "fieldType": "title", "value": "说明" },
-    { "fieldType": "text", "value": "首次启动只记录当前 NDU 状态，不补发历史更新。" },
+    { "fieldType": "text", "value": "首次启动只记录当前状态，不补发历史更新。" },
     { "fieldType": "text", "value": "之后新增 GitHub Release 或 Docker 镜像 digest 变化时，会发送 news 卡片。" }
   ]
 }

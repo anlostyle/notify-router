@@ -1,11 +1,11 @@
 import json
 import logging
-import sqlite3
 import threading
 import time
 from pathlib import Path
 from urllib.parse import quote
 
+import httpx
 from fastapi import APIRouter
 
 from notifyhub.controller.server import server
@@ -48,19 +48,22 @@ def _enabled(value):
     return value is True or str(value).lower() in {"1", "true", "yes", "on"}
 
 
+def _lines(value):
+    if isinstance(value, list):
+        return [str(x).strip() for x in value if str(x).strip()]
+    return [x.strip() for x in str(value or "").replace(",", "\n").splitlines() if x.strip()]
+
+
 def _poll_seconds(config):
     try:
-        return max(60, int(config.get("poll_seconds") or 300))
+        return max(300, int(config.get("poll_seconds") or 3600))
     except Exception:
-        return 300
+        return 3600
 
 
-def _connect(db_path):
-    return sqlite3.connect(f"file:{Path(db_path)}?mode=ro", uri=True, timeout=5)
-
-
-def _release_url(repo, version):
-    return f"https://github.com/{repo}/releases/tag/{quote(str(version), safe='')}"
+def _split_image(value):
+    image, _, tag = value.partition(":")
+    return image, tag or "latest"
 
 
 def _docker_url(image):
@@ -69,68 +72,114 @@ def _docker_url(image):
     return f"https://hub.docker.com/r/{image}"
 
 
+def _release_url(repo, version):
+    return f"https://github.com/{repo}/releases/tag/{quote(str(version), safe='')}"
+
+
 def _short(text, limit=420):
     text = str(text or "").strip()
     return text[:limit] + ("..." if len(text) > limit else "")
 
 
-def release_message(row):
-    repo, version, release_time, release_log_text = row[1], row[2], row[3], row[5]
+def client_get(url, headers=None):
+    with httpx.Client(timeout=30, follow_redirects=True) as client:
+        response = client.get(url, headers=headers)
+        response.raise_for_status()
+        return response.json()
+
+
+def docker_info(ref):
+    image, tag = _split_image(ref)
+    namespace, repo = ("library", image) if "/" not in image else image.split("/", 1)
+    data = client_get(f"https://hub.docker.com/v2/repositories/{namespace}/{repo}/tags/{quote(tag, safe='')}")
+    images = data.get("images") or []
+    digest = data.get("digest") or "|".join(sorted(str(x.get("digest") or "") for x in images if x.get("digest")))
+    platforms = " | ".join(
+        sorted({"/".join(str(x.get(k) or "") for k in ("os", "architecture") if x.get(k)) for x in images if x.get("os")})
+    )
+    return {
+        "key": f"{image}:{tag}",
+        "image": image,
+        "tag": tag,
+        "digest": digest or str(data.get("last_updated") or ""),
+        "updated": str(data.get("tag_last_pushed") or data.get("last_updated") or ""),
+        "platforms": platforms,
+    }
+
+
+def github_release(repo, token=""):
+    headers = {"Accept": "application/vnd.github+json"}
+    if token:
+        headers["Authorization"] = f"Bearer {token}"
+    data = client_get(f"https://api.github.com/repos/{repo}/releases?per_page=1", headers=headers)
+    release = data[0] if data else {}
+    return {
+        "repo": repo,
+        "id": str(release.get("id") or release.get("tag_name") or ""),
+        "version": str(release.get("name") or release.get("tag_name") or ""),
+        "time": str(release.get("published_at") or ""),
+        "body": str(release.get("body") or ""),
+        "url": str(release.get("html_url") or _release_url(repo, release.get("tag_name") or "")),
+    }
+
+
+def release_message(release):
     return (
-        f"仓库：{repo}\n"
-        f"版本：{version}\n"
-        f"发布时间：{release_time}\n"
-        f"更新日志：{_short(release_log_text)}"
+        f"仓库：{release['repo']}\n"
+        f"版本：{release['version']}\n"
+        f"发布时间：{release['time']}\n"
+        f"更新日志：{_short(release['body'])}"
     )
 
 
-def image_message(row):
-    image, tag, update_time, platform = row[1], row[2], row[3], row[4]
-    return f"镜像：{image}:{tag}\n更新时间：{update_time}\n平台：{platform}"
+def image_message(image):
+    return f"镜像：{image['key']}\n更新时间：{image['updated']}\n平台：{image['platforms']}"
 
 
 def poll_once(config=None, state=None, notify=True):
     config = config or _config()
     route_id = str(config.get("route_id") or "").strip()
-    db_path = str(config.get("ndu_db_path") or "/ndu/db/main.db").strip()
     state = state or State()
     data = state.load()
-    with _connect(db_path) as db:
-        releases = db.execute(
-            "SELECT id, repo_name, release_version, release_time, release_log, release_log_text FROM release_info WHERE id>? ORDER BY id",
-            (int(data.get("release_id") or 0),),
-        ).fetchall()
-        images = db.execute(
-            "SELECT id, image_name, image_tag, image_update_time, image_platform, image_digest FROM image_info ORDER BY id"
-        ).fetchall()
-
-    known_images = dict(data.get("images") or {})
     first_run = not data
-    if notify and route_id and not first_run:
-        for row in releases:
+    previous_releases = dict(data.get("releases") or {})
+    previous_images = dict(data.get("images") or {})
+    releases = {}
+    images = {}
+
+    for repo in _lines(config.get("github_repos")):
+        try:
+            release = github_release(repo, str(config.get("github_token") or ""))
+        except Exception as exc:
+            logger.warning("%s GitHub 检查失败 %s: %s", LOG_PREFIX, repo, exc)
+            continue
+        releases[repo] = release["id"]
+        if notify and route_id and not first_run and previous_releases.get(repo) and previous_releases[repo] != release["id"]:
             server.send_notify_by_router(
                 route_id,
-                f"仓库 {row[1]} 发布了新版本",
-                release_message(row),
+                f"仓库 {repo} 发布了新版本",
+                release_message(release),
                 config.get("github_picurl") or None,
-                _release_url(row[1], row[2]),
+                release["url"],
             )
-        for row in images:
-            key = f"{row[1]}:{row[2]}"
-            if known_images.get(key) and known_images[key] != row[5]:
-                server.send_notify_by_router(
-                    route_id,
-                    f"镜像 {key} 更新了",
-                    image_message(row),
-                    config.get("docker_picurl") or None,
-                    _docker_url(row[1]),
-                )
 
-    if releases:
-        data["release_id"] = max(row[0] for row in releases)
-    elif "release_id" not in data:
-        data["release_id"] = 0
-    data["images"] = {f"{row[1]}:{row[2]}": row[5] for row in images}
+    for ref in _lines(config.get("images")):
+        try:
+            image = docker_info(ref)
+        except Exception as exc:
+            logger.warning("%s DockerHub 检查失败 %s: %s", LOG_PREFIX, ref, exc)
+            continue
+        images[image["key"]] = image["digest"]
+        if notify and route_id and not first_run and previous_images.get(image["key"]) and previous_images[image["key"]] != image["digest"]:
+            server.send_notify_by_router(
+                route_id,
+                f"镜像 {image['key']} 更新了",
+                image_message(image),
+                config.get("docker_picurl") or None,
+                _docker_url(image["image"]),
+            )
+
+    data.update({"releases": releases, "images": images, "updated_at": time.time()})
     state.save(data)
     return {"releases": len(releases), "images": len(images), "first_run": first_run}
 
@@ -154,7 +203,7 @@ class Poller(threading.Thread):
 _poller = None
 
 
-@after_setup(PLUGIN_ID, "poll ndu sqlite")
+@after_setup(PLUGIN_ID, "poll registries")
 def start():
     global _poller
     if _poller is None:
@@ -169,6 +218,8 @@ def status():
     return {
         "enabled": _enabled(config.get("enabled", "1")),
         "configured": bool(config.get("route_id")),
-        "release_id": data.get("release_id"),
-        "images": len(data.get("images") or {}),
+        "repos": len(_lines(config.get("github_repos"))),
+        "images": len(_lines(config.get("images"))),
+        "known_releases": len(data.get("releases") or {}),
+        "known_images": len(data.get("images") or {}),
     }
