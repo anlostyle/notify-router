@@ -80,6 +80,7 @@ async def lifespan(_app):
 
 
 app = FastAPI(title="Notify Router", version=__version__, lifespan=lifespan)
+LEGACY_COVER_URL = "https://nanako-1253183981.cos.ap-guangzhou.myqcloud.com/project/notifyhub/coverimg"
 
 
 class NotifyRequest(BaseModel):
@@ -255,13 +256,13 @@ def active_route(route_id):
     return route if route and enabled(route.get("active", True)) else None
 
 
-def enqueue_event(route_id, event, template_type, context, message, push_img_url=None, push_link_url=None):
+def enqueue_event(route_id, event, template_type, context, message, push_img_url=None, push_link_url=None, fallback_img_url=None):
     route = active_route(route_id)
     if not route:
         return notify_error(f"未找到或未激活的通道: {route_id}")
     try:
         title, content = store.render_event(route, template_type, context)
-        store.enqueue_router(route_id, title, content, push_img_url, push_link_url)
+        store.enqueue_router(route_id, title, content, push_img_url or route.get("push_img") or fallback_img_url, push_link_url)
     except ValueError as exc:
         return notify_error(str(exc))
     return {
@@ -381,6 +382,7 @@ async def emby_compatible(route_id: str, request: Request):
         "Emby事件通知已进入发送队列",
         push_img_url,
         payload.get("push_link_url"),
+        f"{LEGACY_COVER_URL}/EmbyNotify.png",
     )
 
 
@@ -403,6 +405,7 @@ async def watchtower_compatible(route_id: str, request: Request):
         "Watchtower事件通知已进入发送队列",
         payload.get("push_img_url"),
         payload.get("push_link_url"),
+        f"{LEGACY_COVER_URL}/Watchtower.png",
     )
 
 
@@ -427,7 +430,14 @@ async def pve_compatible(route_id: str, request: Request):
                 )
             )
         return notify_error(str(exc))
-    return enqueue_event(route_id, event, template_type, context, "PVE事件通知已进入发送队列")
+    return enqueue_event(
+        route_id,
+        event,
+        template_type,
+        context,
+        "PVE事件通知已进入发送队列",
+        fallback_img_url=f"{LEGACY_COVER_URL}/PVEBackup.png",
+    )
 
 
 @app.get("/api/admin/status", dependencies=[Depends(admin_auth)])

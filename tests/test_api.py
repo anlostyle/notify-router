@@ -16,7 +16,7 @@ def test_notify_api_keeps_legacy_response_shape(tmp_path, monkeypatch):
                     "route_id": "r1",
                     "route_name": "Route",
                     "channel_name": ["test"],
-                    "bind_template": ["movie", "series"],
+                    "bind_template": ["movie", "series", "watch", "pve"],
                     "active": True,
                 },
                 {
@@ -34,6 +34,8 @@ def test_notify_api_keeps_legacy_response_shape(tmp_path, monkeypatch):
                 "template": [
                     {"name": "movie", "type": "Emby.LibraryNewMovie", "title": "{{ title }}", "content": "movie"},
                     {"name": "series", "type": "Emby.LibraryNewSeries", "title": "{{ title }}", "content": "series"},
+                    {"name": "watch", "type": "Watchtower.Update", "title": "{{ server_name }}", "content": "{{ updated_image_list }}"},
+                    {"name": "pve", "type": "PVE.Backup", "title": "{{ machine_name }}", "content": "{{ task_status }}"},
                 ]
             }
         ),
@@ -99,3 +101,39 @@ def test_notify_api_keeps_legacy_response_shape(tmp_path, monkeypatch):
             with main.store.connect() as db:
                 image = db.execute("SELECT push_img_url FROM outbox ORDER BY rowid DESC LIMIT 1").fetchone()[0]
             assert image == f"https://tv.example/emby/Items/{expected_id}/Images/Primary"
+
+        for path, payload, expected in (
+            (
+                "/api/service/emby/notify/r1",
+                {"Event": "library.new", "Item": {"Id": "movie/1", "Type": "Movie", "Name": "Film"}},
+                "EmbyNotify.png",
+            ),
+            (
+                "/api/service/watchtower/notify/r1",
+                {"title": "Watchtower updates on host", "message": "Found new example/app:latest image"},
+                "Watchtower.png",
+            ),
+            (
+                "/api/service/pve/notify/r1/message",
+                {
+                    "title": "vzdump backup status (pve): OK",
+                    "message": "100  vm  OK  00:00:03  1 GB\nTotal running time: 3s\nTotal size: 1 GB",
+                },
+                "PVEBackup.png",
+            ),
+        ):
+            assert client.post(path, json=payload).status_code == 200
+            with main.store.connect() as db:
+                image = db.execute("SELECT push_img_url FROM outbox ORDER BY rowid DESC LIMIT 1").fetchone()[0]
+            assert image.endswith(expected)
+
+        config = main.store.config
+        config["routes"][0]["push_img"] = "https://example.com/custom.png"
+        main.store.save_config(config)
+        assert client.post(
+            "/api/service/watchtower/notify/r1",
+            json={"title": "Watchtower updates on host", "message": "Found new example/app:latest image"},
+        ).status_code == 200
+        with main.store.connect() as db:
+            image = db.execute("SELECT push_img_url FROM outbox ORDER BY rowid DESC LIMIT 1").fetchone()[0]
+        assert image == "https://example.com/custom.png"
