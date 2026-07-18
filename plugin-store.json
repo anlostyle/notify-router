@@ -1,0 +1,70 @@
+{
+  "schema_version": 1,
+  "name": "Notify Router 官方插件库",
+  "homepage": "https://github.com/anlostyle/notify-router/tree/master/plugins",
+  "plugins": [
+    {
+      "id": "TGForwardBot",
+      "name": "TG私聊机器人",
+      "version": "0.0.1",
+      "description": "将 Telegram 私聊消息转发到 Notify Router。",
+      "author": "htnanako",
+      "archive_url": "https://github.com/anlostyle/notify-router/archive/refs/heads/master.zip",
+      "subdir": "notify-router-master/plugins/TGForwardBot"
+    },
+    {
+      "id": "nextfind_assistant",
+      "name": "NextFind 企业微信助手",
+      "version": "0.2.0",
+      "description": "通过企业微信搜索、查看、订阅和转存 NextFind 资源。",
+      "author": "Codex",
+      "archive_url": "https://github.com/anlostyle/notify-router/archive/refs/heads/master.zip",
+      "subdir": "notify-router-master/plugins/nextfind_assistant"
+    },
+    {
+      "id": "ndu_monitor",
+      "name": "NDU 更新监控",
+      "version": "0.1.0",
+      "description": "监控 DockerHub 镜像和 GitHub Release，并发送更新通知。",
+      "author": "Codex",
+      "archive_url": "https://github.com/anlostyle/notify-router/archive/refs/heads/master.zip",
+      "subdir": "notify-router-master/plugins/ndu_monitor"
+    },
+    {
+      "id": "nsrss",
+      "name": "NS/DF论坛 RSS 监控",
+      "version": "0.0.2",
+      "description": "监控 NodeSeek 和 DeepFlood RSS 关键词。",
+      "author": "htnanako",
+      "archive_url": "https://github.com/anlostyle/notify-router/archive/refs/heads/master.zip",
+      "subdir": "notify-router-master/plugins/nsrss"
+    },
+    {
+      "id": "reminder",
+      "name": "Reminder",
+      "version": "0.1.0",
+      "description": "管理一次性、循环提醒和订阅到期提醒。",
+      "author": "htnanako",
+      "archive_url": "https://github.com/anlostyle/notify-router/archive/refs/heads/master.zip",
+      "subdir": "notify-router-master/plugins/reminder"
+    },
+    {
+      "id": "wx-media302-save",
+      "name": "115转存-media302",
+      "version": "0.0.2",
+      "description": "通过企业微信接入 Media302 进行 115 资源转存。",
+      "author": "Qoo",
+      "archive_url": "https://github.com/anlostyle/notify-router/archive/refs/heads/master.zip",
+      "subdir": "notify-router-master/plugins/wx-media302-save"
+    },
+    {
+      "id": "wx-nullbr",
+      "name": "微信资源搜索",
+      "version": "0.0.1",
+      "description": "通过企业微信接入 Nullbr 搜索并使用 Media302 转存。",
+      "author": "htnanako",
+      "archive_url": "https://github.com/anlostyle/notify-router/archive/refs/heads/master.zip",
+      "subdir": "notify-router-master/plugins/wx-nullbr"
+    }
+  ]
+}

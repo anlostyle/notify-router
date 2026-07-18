@@ -3,6 +3,17 @@
 These plugins are copied manually into `data/plugins`; the release image does
 not install or configure them automatically.
 
+Notify Router 0.4.0 and later can also install and update them from the admin
+plugin store. Add this source URL under **插件管理 → 插件源**:
+
+```text
+https://raw.githubusercontent.com/anlostyle/notify-router/master/plugin-store.json
+```
+
+Plugin changes are downloaded into the persistent `data/plugins` directory and
+take effect after the Notify Router container is restarted. Replaced or removed
+plugin files are retained under `data/plugin-backups` for rollback.
+
 | Plugin | Purpose | Required configuration |
 | --- | --- | --- |
 | `TGForwardBot` | Telegram private-message relay | Bot Token, administrator Chat ID |

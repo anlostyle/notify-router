@@ -105,7 +105,16 @@ contract and use the scripts under `scripts/` to validate or copy legacy data.
 ## Optional plugins
 
 Sanitized optional plugins are provided under `plugins/`. They contain no
-runtime configuration or credentials and are not installed automatically:
+runtime configuration or credentials. On Notify Router 0.4.0 and later, open
+**插件管理 → 插件源** and add:
+
+```text
+https://raw.githubusercontent.com/anlostyle/notify-router/master/plugin-store.json
+```
+
+The admin plugin store can then install new plugins and update existing ones.
+Restart the container after a plugin file change. Manual installation remains
+available:
 
 ```bash
 mkdir -p data/plugins

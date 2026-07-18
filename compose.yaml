@@ -1,6 +1,6 @@
 services:
   notify-router:
-    image: ${NOTIFY_IMAGE:-ghcr.io/anlostyle/notify-router}:${NOTIFY_VERSION:-0.3.0}
+    image: ${NOTIFY_IMAGE:-ghcr.io/anlostyle/notify-router}:${NOTIFY_VERSION:-0.4.0}
     build: .
     container_name: notify-router
     ports:
@@ -17,5 +17,6 @@ services:
       ACCESS_LOG: ${ACCESS_LOG:-0}
       INSTALL_PLUGIN_REQUIREMENTS: ${INSTALL_PLUGIN_REQUIREMENTS:-1}
       PLUGIN_TASKS_ENABLED: ${PLUGIN_TASKS_ENABLED:-1}
+      ADMIN_RESTART_ENABLED: ${ADMIN_RESTART_ENABLED:-1}
       TZ: ${TZ:-Asia/Shanghai}
     restart: unless-stopped

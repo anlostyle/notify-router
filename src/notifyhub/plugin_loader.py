@@ -30,7 +30,7 @@ class PluginLoader:
         if str(target) not in sys.path:
             sys.path.insert(0, str(target))
         for directory in sorted(self.store.plugins_dir.iterdir()):
-            if not directory.is_dir() or not (directory / "manifest.json").exists():
+            if directory.name.startswith(".") or not directory.is_dir() or not (directory / "manifest.json").exists():
                 continue
             try:
                 self._load_one(directory, target)

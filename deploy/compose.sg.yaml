@@ -14,6 +14,7 @@ services:
       TZ: Asia/Shanghai
       INSTALL_PLUGIN_REQUIREMENTS: "1"
       PLUGIN_TASKS_ENABLED: "${PLUGIN_TASKS_ENABLED:-1}"
+      ADMIN_RESTART_ENABLED: "1"
       COOKIE_SECURE: "1"
       ACCESS_LOG: "0"
     restart: unless-stopped

@@ -2,6 +2,7 @@ import hmac
 import json
 import logging
 import os
+import signal
 import threading
 import time
 from base64 import urlsafe_b64decode, urlsafe_b64encode
@@ -11,6 +12,7 @@ from pathlib import Path
 from urllib.parse import quote
 
 import uvicorn
+import httpx
 from fastapi import Body, Cookie, Depends, FastAPI, Header, HTTPException, Request, Response
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.security import HTTPBasic, HTTPBasicCredentials
@@ -22,6 +24,7 @@ from .builtin_plugins import register_builtin_plugins
 from .controller.schedule import start_scheduler, stop_scheduler
 from .controller.server import Server
 from .plugin_loader import PluginLoader
+from .plugin_store import PluginStore, _validate_remote_url
 from .plugins.common import run_after_setup_hooks
 from .service_compat import parse_emby, parse_pve, parse_watchtower
 from .store import Store, enabled, redact_secret_text
@@ -29,6 +32,8 @@ from .worker import DeliveryWorker
 
 
 logging.basicConfig(level=os.environ.get("LOG_LEVEL", "INFO"), format="%(asctime)s %(levelname)s %(name)s %(message)s")
+logging.getLogger("httpx").setLevel(logging.WARNING)
+logging.getLogger("httpcore").setLevel(logging.WARNING)
 logger = logging.getLogger("notifyhub")
 LOG_BUFFER = deque(maxlen=500)
 
@@ -53,6 +58,7 @@ os.environ.setdefault("WORKDIR", str(DATA_DIR))
 store = Store(DATA_DIR)
 Server.configure(store)
 worker = DeliveryWorker(store)
+plugin_store = PluginStore(store)
 security = HTTPBasic(auto_error=False)
 MASK = "••••••"
 SESSION_COOKIE = "notify_session"
@@ -101,6 +107,15 @@ class TestNotification(BaseModel):
     content: str = "通知渠道连接正常。"
     push_img_url: str | None = None
     push_link_url: str | None = None
+
+
+class PluginSourcesRequest(BaseModel):
+    sources: list[str]
+
+
+class PluginInstallRequest(BaseModel):
+    source_url: str
+    plugin_id: str
 
 
 def api_auth(authorization: str | None = Header(default=None)):
@@ -448,6 +463,7 @@ def admin_status():
         "routes": len(store.routes),
         "plugins": len(plugin_manifests),
         "plugin_tasks": enabled(os.environ.get("PLUGIN_TASKS_ENABLED", "1")),
+        "admin_restart": enabled(os.environ.get("ADMIN_RESTART_ENABLED", "0")),
         "stats": store.dashboard_stats(),
         "deliveries": store.delivery_status(25),
     }
@@ -529,6 +545,70 @@ def plugins():
         }
         for manifest in plugin_manifests
     ]
+
+
+def _plugin_sources():
+    return list(store.config.get("app", {}).get("plugin_sources") or [])
+
+
+@app.get("/api/admin/plugin-store", dependencies=[Depends(admin_auth)])
+def plugin_store_catalog():
+    return plugin_store.catalog(_plugin_sources())
+
+
+@app.put("/api/admin/plugin-store/sources", dependencies=[Depends(admin_auth)])
+def save_plugin_sources(payload: PluginSourcesRequest):
+    sources = []
+    for source in payload.sources:
+        source = str(source or "").strip()
+        if not source or source in sources:
+            continue
+        try:
+            _validate_remote_url(source)
+        except ValueError as exc:
+            raise HTTPException(400, str(exc)) from exc
+        sources.append(source)
+    if len(sources) > 10:
+        raise HTTPException(400, "最多可添加 10 个插件源")
+    config = store.config
+    config["app"] = {**config.get("app", {}), "plugin_sources": sources}
+    store.save_config(config)
+    return {"code": 0, "message": "saved", "sources": sources}
+
+
+@app.post("/api/admin/plugin-store/install", dependencies=[Depends(admin_auth)])
+def install_plugin(payload: PluginInstallRequest):
+    if payload.source_url not in _plugin_sources():
+        raise HTTPException(400, "请先添加并保存该插件源")
+    try:
+        return plugin_store.install(payload.source_url, payload.plugin_id)
+    except KeyError as exc:
+        raise HTTPException(404, "插件源中没有找到该插件") from exc
+    except (ValueError, httpx.HTTPError) as exc:
+        raise HTTPException(400, str(exc)) from exc
+
+
+@app.delete("/api/admin/plugin-store/plugins/{plugin_id}", dependencies=[Depends(admin_auth)])
+def uninstall_plugin(plugin_id: str):
+    try:
+        return plugin_store.uninstall(plugin_id)
+    except KeyError as exc:
+        raise HTTPException(404, "插件未安装") from exc
+    except ValueError as exc:
+        raise HTTPException(400, str(exc)) from exc
+
+
+def _restart_process():
+    time.sleep(0.75)
+    os.kill(os.getpid(), signal.SIGTERM)
+
+
+@app.post("/api/admin/restart", dependencies=[Depends(admin_auth)], status_code=202)
+def restart_service():
+    if not enabled(os.environ.get("ADMIN_RESTART_ENABLED", "0")):
+        raise HTTPException(403, "当前部署未启用管理后台重启")
+    threading.Thread(target=_restart_process, name="admin-restart", daemon=True).start()
+    return {"code": 0, "message": "restarting"}
 
 
 @app.get("/api/admin/plugins/{plugin_id}/config", dependencies=[Depends(admin_auth)])

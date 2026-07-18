@@ -42,6 +42,7 @@ const state = {
   config: null,
   templates: [],
   plugins: [],
+  pluginStore: { sources: [], plugins: [] },
   deliveries: [],
   logs: [],
   query: '',
@@ -143,6 +144,7 @@ function setPageActions(page) {
     templates: `<button class="button primary" data-action="add-template" aria-label="新增模板">${icon('plus')}<span>新增模板</span></button>`,
     deliveries: `<button class="button secondary" data-action="refresh" aria-label="刷新">${icon('refresh')}<span>刷新</span></button>`,
     logs: `<button class="button secondary" data-action="refresh" aria-label="刷新">${icon('refresh')}<span>刷新</span></button>`,
+    plugins: `<button class="button secondary" data-action="manage-plugin-sources" aria-label="管理插件源">${icon('settings')}<span>插件源</span></button>`,
     settings: `<button class="button primary" data-action="edit-settings" aria-label="编辑设置">${icon('edit')}<span>编辑设置</span></button>`,
   }
   $('#page-actions').innerHTML = actions[page] || ''
@@ -176,6 +178,10 @@ async function renderPage() {
       if (currentPage() !== 'logs') return
       try { state.logs = await api('/api/admin/logs?limit=300'); renderCurrent() } catch { /* next poll retries */ }
     }, 5000)
+  }
+  if (page === 'plugins') {
+    $('#page-content').innerHTML = '<div class="skeleton"></div>'
+    state.pluginStore = await api('/api/admin/plugin-store')
   }
   renderCurrent()
 }
@@ -260,9 +266,20 @@ function renderTemplates() {
 
 function renderPlugins() {
   const plugins = state.plugins.filter(item => matches(item.name, item.id, item.description, item.version))
-  if (!plugins.length) return emptyState('plug', '没有匹配的插件', '请尝试其他关键词')
-  return `<div class="entity-grid">${plugins.map(plugin => `
+  const catalog = (state.pluginStore.plugins || []).filter(item => matches(item.name, item.id, item.description, item.version, item.author))
+  const sources = state.pluginStore.sources || []
+  const sourceSummary = sources.length
+    ? sources.map(source => `<span class="tag ${source.status === 'error' ? 'danger' : ''}" title="${escapeHtml(source.error || source.url)}">${escapeHtml(source.name)} · ${source.status === 'ok' ? '正常' : '异常'}</span>`).join(' ')
+    : '<span class="form-note">还没有插件源，点击右上角“插件源”添加地址。</span>'
+  const installedCards = plugins.length ? `<div class="entity-grid">${plugins.map(plugin => `
     <article class="entity-card"><div class="entity-head"><span class="entity-icon">${icon('plug')}</span><div class="entity-title"><h3>${escapeHtml(plugin.name || plugin.id)}</h3><p>${escapeHtml(plugin.id)} · v${escapeHtml(plugin.version || '—')}</p></div><span class="status-badge active">已加载</span></div><div class="entity-body"><p>${escapeHtml(plugin.description || '暂无插件说明')}</p></div><div class="entity-actions">${plugin.has_frontend ? `<button class="button secondary small" data-action="open-plugin" data-id="${escapeHtml(plugin.id)}">打开页面</button>` : ''}<span class="spacer"></span><button class="button secondary small" data-action="edit-plugin" data-id="${escapeHtml(plugin.id)}">${icon('settings')}配置</button></div></article>`).join('')}</div>`
+    : '<div class="empty-state"><p>当前没有已加载的可选插件</p></div>'
+  const storeCards = catalog.length ? `<div class="entity-grid">${catalog.map(plugin => {
+    const action = plugin.update_available ? 'update-plugin' : plugin.installed ? '' : 'install-plugin'
+    const label = plugin.update_available ? `更新到 v${plugin.version}` : plugin.installed ? '已是最新版' : '安装'
+    return `<article class="entity-card"><div class="entity-head"><span class="entity-icon">${icon('plug')}</span><div class="entity-title"><h3>${escapeHtml(plugin.name || plugin.id)}</h3><p>${escapeHtml(plugin.author || '第三方开发者')} · v${escapeHtml(plugin.version)}</p></div><span class="status-badge ${plugin.installed ? 'active' : 'pending'}">${plugin.update_available ? '可更新' : plugin.installed ? '已安装' : '未安装'}</span></div><div class="entity-body"><p>${escapeHtml(plugin.description || '暂无插件说明')}</p>${plugin.installed_version ? `<small>本地版本 v${escapeHtml(plugin.installed_version)}</small>` : ''}</div><div class="entity-actions">${action ? `<button class="button primary small" data-action="${action}" data-id="${escapeHtml(plugin.id)}" data-source="${escapeHtml(plugin.source_url)}">${label}</button>` : `<button class="button secondary small" disabled>${label}</button>`}<span class="spacer"></span>${plugin.installed ? `<button class="button danger small" data-action="uninstall-plugin" data-id="${escapeHtml(plugin.id)}">卸载</button>` : ''}</div></article>`
+  }).join('')}</div>` : emptyState('plug', sources.length ? '插件源中没有匹配的插件' : '添加插件源后浏览插件库', sources.length ? '请检查插件源或尝试其他关键词' : '插件源是一个公开的 JSON 索引地址')
+  return `<div class="toolbar">${sourceSummary}</div><section class="panel"><header class="panel-header"><div><h2>插件商店</h2><p>在线安装和更新插件；变更在重启容器后生效</p></div><span class="tag purple">${catalog.length} 个插件</span></header><div class="panel-body">${storeCards}</div></section><section class="panel" style="margin-top:18px"><header class="panel-header"><div><h2>已加载插件</h2><p>当前进程正在运行的插件</p></div><span class="tag">${plugins.length} 个</span></header><div class="panel-body">${installedCards}</div></section>`
 }
 
 function renderDeliveries() {
@@ -479,6 +496,23 @@ function pluginField(field, value) {
   return formField(`plugin_${name}`, field.label || name, type, Array.isArray(value) ? value.join(',') : value ?? field.defaultValue ?? '', '', hint)
 }
 
+function openPluginSources() {
+  const sources = (state.config.app?.plugin_sources || []).join('\n')
+  openModal({
+    eyebrow: '插件商店', title: '管理插件源', wide: true,
+    body: `${formField('sources', '插件源地址', 'textarea', sources, 'https://raw.githubusercontent.com/example/plugins/main/plugin-store.json', '每行一个公开 HTTPS JSON 索引地址，最多 10 个。安装第三方插件等同于允许其代码在容器内运行。')}`,
+    onSubmit: async form => {
+      const values = String(new FormData(form).get('sources') || '').split(/\r?\n/).map(item => item.trim()).filter(Boolean)
+      await api('/api/admin/plugin-store/sources', { method: 'PUT', body: JSON.stringify({ sources: values }) })
+      closeModal()
+      await loadCore()
+      state.pluginStore = await api('/api/admin/plugin-store')
+      renderCurrent()
+      toast('插件源已保存')
+    },
+  })
+}
+
 async function openPluginForm(plugin) {
   const config = await api(`/api/admin/plugins/${encodeURIComponent(plugin.id)}/config`)
   const fields = plugin.configField || []
@@ -558,6 +592,32 @@ function toast(title, description = '', type = 'success') {
   setTimeout(() => node.remove(), 4200)
 }
 
+function delay(milliseconds) {
+  return new Promise(resolve => setTimeout(resolve, milliseconds))
+}
+
+async function finishPluginChange(message) {
+  if (!state.status.admin_restart) {
+    state.pluginStore = await api('/api/admin/plugin-store')
+    renderCurrent()
+    return toast(message, '请重启 Notify Router 容器使变更生效')
+  }
+  toast(message, 'Notify Router 正在重启，页面会自动恢复')
+  await api('/api/admin/restart', { method: 'POST' })
+  await delay(1500)
+  let sawOffline = false
+  for (let attempt = 0; attempt < 60; attempt += 1) {
+    try {
+      const response = await fetch('/healthz', { cache: 'no-store' })
+      if (response.ok && (sawOffline || attempt >= 2)) return location.reload()
+    } catch {
+      sawOffline = true
+    }
+    await delay(1000)
+  }
+  location.reload()
+}
+
 function openMobileMenu() {
   $('#sidebar').classList.add('open')
   $('#mobile-backdrop').classList.add('open')
@@ -611,6 +671,22 @@ async function handleAction(action, target) {
     const routes = (state.config.routes || []).filter(route => (route.bind_template || []).includes(name))
     if (routes.length) return toast('无法删除正在使用的模板', `仍被 ${routes.map(item => item.route_name).join('、')} 使用`, 'error')
     return confirmModal('删除通知模板', `确定删除“${name}”吗？`, async () => saveTemplates(state.templates.filter(item => item.name !== name), '模板已删除'), true)
+  }
+  if (action === 'manage-plugin-sources') return openPluginSources()
+  if (action === 'install-plugin' || action === 'update-plugin') {
+    const verb = action === 'update-plugin' ? '更新' : '安装'
+    return confirmModal(`${verb}插件`, `确定${verb}“${target.dataset.id}”吗？文件下载完成后需要重启容器才能生效。`, async () => {
+      await api('/api/admin/plugin-store/install', { method: 'POST', body: JSON.stringify({ source_url: target.dataset.source, plugin_id: target.dataset.id }) })
+      closeModal()
+      await finishPluginChange(`插件已${verb}`)
+    })
+  }
+  if (action === 'uninstall-plugin') {
+    return confirmModal('卸载插件', `确定卸载“${target.dataset.id}”吗？插件文件会移入备份目录，配置和历史数据不会删除；重启容器后生效。`, async () => {
+      await api(`/api/admin/plugin-store/plugins/${encodeURIComponent(target.dataset.id)}`, { method: 'DELETE' })
+      closeModal()
+      await finishPluginChange('插件已卸载')
+    }, true)
   }
   if (action === 'edit-plugin') return openPluginForm(state.plugins.find(item => item.id === target.dataset.id))
   if (action === 'open-plugin') return window.open(`/api/plugins/${encodeURIComponent(target.dataset.id)}/frontend/`, '_blank', 'noopener')

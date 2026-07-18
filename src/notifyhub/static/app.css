@@ -201,6 +201,7 @@ svg { width: 20px; height: 20px; fill: none; stroke: currentColor; stroke-width:
 .entity-actions { display: flex; align-items: center; gap: 7px; margin-top: auto; padding-top: 14px; border-top: 1px solid var(--border); }
 .entity-actions .spacer { flex: 1; }
 .tag, .status-badge { display: inline-flex; align-items: center; gap: 5px; max-width: 100%; padding: 3px 8px; border-radius: 999px; color: var(--muted); background: var(--surface-hover); font-size: 10px; font-weight: 650; }
+.tag.danger { color: var(--red); background: var(--red-soft); }
 .tag.purple { color: var(--primary); background: var(--primary-soft); }
 .status-badge::before { content: ""; width: 6px; height: 6px; border-radius: 50%; background: currentColor; }
 .status-badge.sent, .status-badge.active { color: var(--green); background: var(--green-soft); }
