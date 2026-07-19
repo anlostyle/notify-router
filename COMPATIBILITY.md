@@ -24,6 +24,12 @@ This project is independently implemented from the public API documentation, the
 
 Requests are committed to SQLite before the API returns. Channel delivery happens from a durable outbox, with bounded retries and a permanent failure record. Existing `notify_records` and `notify_daily_summary` rows continue to be populated.
 
+The generic `/api/service/notify` endpoint accepts `route_id`, `title`, `content`, and optional link/image fields from either a JSON POST body or URL query parameters. When both are present, JSON body values take precedence and query parameters fill missing fields. This supports webhook callers such as Flowlink that use URLs in the following form:
+
+```text
+/api/service/notify?route_id=route_id&title={title}&content={content}
+```
+
 ## Native service endpoints
 
 - Emby: `/api/service/emby/notify/{route_id}`

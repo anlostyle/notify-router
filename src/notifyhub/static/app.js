@@ -703,7 +703,7 @@ async function handleAction(action, target) {
   }
   if (action === 'copy-route') {
     const base = (state.config.app?.site_url || location.origin).replace(/\/$/, '')
-    await navigator.clipboard.writeText(`${base}/api/service/notify/${target.dataset.id}/{title}/{content}`)
+    await navigator.clipboard.writeText(`${base}/api/service/notify?route_id=${encodeURIComponent(target.dataset.id)}&title={title}&content={content}`)
     return toast('调用地址已复制')
   }
   if (action === 'add-template') return openTemplateForm()

@@ -341,17 +341,34 @@ def admin_session(notify_session: str | None = Cookie(default=None)):
 
 
 @app.post("/api/service/notify", dependencies=[Depends(api_auth)])
-def notify(payload: object = Body(...)):
+def notify(
+    payload: object = Body(default=None),
+    route_id: str | None = None,
+    title: str | None = None,
+    content: str | None = None,
+    push_img_url: str | None = None,
+    push_link_url: str | None = None,
+):
     if isinstance(payload, (str, bytes)):
         try:
             payload = json.loads(payload)
         except (json.JSONDecodeError, UnicodeDecodeError):
             pass
+    if payload is None:
+        payload = {}
     if not isinstance(payload, dict):
         return notify_error("请求体不是合法的JSON格式")
-    route_id = payload.get("route_id")
-    if route_id and not active_route(route_id):
-        return notify_error(f"未找到或未激活的通道: {route_id}")
+    query_values = {
+        "route_id": route_id,
+        "title": title,
+        "content": content,
+        "push_img_url": push_img_url,
+        "push_link_url": push_link_url,
+    }
+    payload = {**{key: value for key, value in query_values.items() if value is not None}, **payload}
+    resolved_route_id = payload.get("route_id")
+    if resolved_route_id and not active_route(resolved_route_id):
+        return notify_error(f"未找到或未激活的通道: {resolved_route_id}")
     try:
         return enqueue(NotifyRequest.model_validate(payload))
     except ValidationError:

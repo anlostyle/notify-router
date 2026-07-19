@@ -69,6 +69,24 @@ def test_notify_api_keeps_legacy_response_shape(tmp_path, monkeypatch):
         assert response.status_code == 200
         assert response.json()["success"] is True
 
+        response = client.post(
+            "/api/service/notify",
+            params={"route_id": "r1", "title": "Flowlink", "content": "query-only webhook"},
+        )
+        assert response.status_code == 200
+        assert response.json()["success"] is True
+
+        response = client.post(
+            "/api/service/notify",
+            params={"route_id": "r1", "title": "query title", "content": "query content"},
+            json={"title": "body title", "content": "body content"},
+        )
+        assert response.status_code == 200
+        assert response.json()["success"] is True
+        with main.store.connect() as db:
+            queued = db.execute("SELECT title, content FROM outbox ORDER BY rowid DESC LIMIT 1").fetchone()
+        assert tuple(queued) == ("body title", "body content")
+
         for title, expected in (
             ("[事件] Pixel6(1.2.3.4) 又有设备离线啦～", "🔴 设备离线｜Pixel6(1.2.3.4)"),
             ("[恢复] Pixel6(1.2.3.4) 又有设备离线啦～", "✅ 设备恢复｜Pixel6(1.2.3.4)"),
