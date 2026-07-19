@@ -181,6 +181,22 @@ class PluginStore:
         target.replace(backup)
         return {"id": plugin_id, "backup": str(backup), "restart_required": True}
 
+    def restore(self, plugin_id, backup):
+        backup = Path(backup or "")
+        target = self.store.plugins_dir / plugin_id
+        backup_root = (self.store.data_dir / "plugin-backups").resolve()
+        try:
+            resolved = backup.resolve(strict=True)
+        except OSError as exc:
+            raise ValueError("插件备份不存在") from exc
+        if resolved.parent != backup_root or not resolved.is_dir():
+            raise ValueError("插件备份路径无效")
+        failed = backup_root / f"{plugin_id}-{time.strftime('%Y%m%d-%H%M%S')}-failed"
+        if target.exists():
+            target.replace(failed)
+        resolved.replace(target)
+        return {"id": plugin_id, "restored": True, "failed_backup": str(failed) if failed.exists() else None}
+
     @staticmethod
     def _extract_plugin(archive, subdir, staging):
         prefix = PurePosixPath(str(subdir)).as_posix().strip("/") + "/"

@@ -1,6 +1,6 @@
 # Notify Router
 
-Notify Router is a self-hosted notification service compatible with the public
+Notify Router is a self-hosted notification and plugin service compatible with the public
 NotifyHub API and data layout. It includes a responsive management console,
 durable SQLite delivery queue, retries, templates, plugins, and native
 Enterprise WeChat channels with a configurable API server.
@@ -113,7 +113,11 @@ https://raw.githubusercontent.com/anlostyle/notify-router/master/plugin-store.js
 ```
 
 The admin plugin store can then install new plugins and update existing ones.
-Restart the container after a plugin file change. Manual installation remains
+Since 0.5.0, every third-party plugin runs in an isolated worker process. Store
+changes hot-switch only the affected plugin, keep the router online, and roll
+back automatically if the candidate fails its startup check. Plugin dependencies
+live under `/data/plugin-runtime/<plugin-id>` and mutable state lives under
+`/data/plugin-data/<plugin-id>`. Manual installation remains
 available:
 
 ```bash

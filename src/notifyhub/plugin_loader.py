@@ -6,6 +6,7 @@ import logging
 import os
 import pkgutil
 import re
+import shutil
 import subprocess
 import sys
 import types
@@ -25,26 +26,28 @@ class PluginLoader:
         self.manifests = []
 
     def load(self):
-        target = self.store.data_dir / "python"
-        target.mkdir(exist_ok=True)
-        if str(target) not in sys.path:
-            sys.path.insert(0, str(target))
         for directory in sorted(self.store.plugins_dir.iterdir()):
             if directory.name.startswith(".") or not directory.is_dir() or not (directory / "manifest.json").exists():
                 continue
             try:
-                self._load_one(directory, target)
+                self.load_one(directory)
             except Exception:
                 logger.exception("plugin load failed: %s", directory.name)
         return self.manifests
 
-    def _load_one(self, directory, target):
+    def load_one(self, directory, target=None):
+        target = Path(target or self.store.data_dir / "python")
+        target.mkdir(parents=True, exist_ok=True)
+        if str(target) not in sys.path:
+            sys.path.insert(0, str(target))
         manifest = json.loads((directory / "manifest.json").read_text(encoding="utf-8"))
+        for cache in directory.rglob("__pycache__"):
+            shutil.rmtree(cache, ignore_errors=True)
         plugin_id = str(manifest.get("id") or directory.name)
         data = self.store.get_plugin_data(plugin_id)
         if data and not data.get("status"):
             logger.info("plugin disabled: %s", plugin_id)
-            return
+            return None
         self._install_requirements(directory, target)
         package_name = "_notifyhub_plugin_" + re.sub(r"\W+", "_", plugin_id)
         init_file = directory / "__init__.py"
@@ -79,6 +82,7 @@ class PluginLoader:
                 name=f"plugin-{plugin_id}",
             )
         self.manifests.append(manifest)
+        return manifest
 
     def _install_requirements(self, directory, target):
         requirements = directory / "requirements.txt"

@@ -12,6 +12,10 @@ logger = logging.getLogger(__name__)
 PLUGIN_ID = "nextfind_assistant"
 
 
+def _data_dir() -> Path:
+    return Path(os.environ.get("PLUGIN_DATA_DIR") or (Path(os.environ.get("WORKDIR") or "/data") / "plugin-data" / PLUGIN_ID))
+
+
 class Config:
     def __init__(self):
         self._cache = None
@@ -86,8 +90,7 @@ config = Config()
 
 class UserState:
     def __init__(self):
-        base = Path(os.environ.get("WORKDIR") or "/data")
-        self.path = base / "plugins" / PLUGIN_ID / "state.json"
+        self.path = _data_dir() / "state.json"
         self.path.parent.mkdir(parents=True, exist_ok=True)
 
     def _load(self) -> Dict[str, Any]:
@@ -110,8 +113,7 @@ class UserState:
 
 class PluginState:
     def __init__(self):
-        base = Path(os.environ.get("WORKDIR") or "/data")
-        self.path = base / "plugins" / PLUGIN_ID / "plugin_state.json"
+        self.path = _data_dir() / "plugin_state.json"
         self.path.parent.mkdir(parents=True, exist_ok=True)
 
     def _load(self) -> Dict[str, Any]:

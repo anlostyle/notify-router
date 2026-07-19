@@ -1,3 +1,4 @@
+import asyncio
 import hmac
 import json
 import logging
@@ -23,7 +24,7 @@ from . import __version__
 from .builtin_plugins import register_builtin_plugins
 from .controller.schedule import start_scheduler, stop_scheduler
 from .controller.server import Server
-from .plugin_loader import PluginLoader
+from .plugin_supervisor import PluginSupervisor
 from .plugin_store import PluginStore, _validate_remote_url
 from .plugins.common import run_after_setup_hooks
 from .service_compat import parse_emby, parse_pve, parse_watchtower
@@ -59,6 +60,7 @@ store = Store(DATA_DIR)
 Server.configure(store)
 worker = DeliveryWorker(store)
 plugin_store = PluginStore(store)
+plugin_supervisor = PluginSupervisor(store)
 security = HTTPBasic(auto_error=False)
 MASK = "••••••"
 SESSION_COOKIE = "notify_session"
@@ -79,7 +81,9 @@ async def lifespan(_app):
         await run_after_setup_hooks(logger)
     else:
         logger.info("plugin background tasks disabled")
+    await asyncio.to_thread(plugin_supervisor.start_all)
     yield
+    await asyncio.to_thread(plugin_supervisor.stop_all)
     if plugin_tasks:
         stop_scheduler()
     worker.stop()
@@ -461,7 +465,7 @@ def admin_status():
         "version": __version__,
         "channels": len(store.channels),
         "routes": len(store.routes),
-        "plugins": len(plugin_manifests),
+        "plugins": len(_all_plugin_manifests()),
         "plugin_tasks": enabled(os.environ.get("PLUGIN_TASKS_ENABLED", "1")),
         "admin_restart": enabled(os.environ.get("ADMIN_RESTART_ENABLED", "0")),
         "stats": store.dashboard_stats(),
@@ -542,8 +546,10 @@ def plugins():
         {
             **manifest,
             "has_frontend": (store.plugins_dir / str(manifest.get("id") or "") / "frontend").is_dir(),
+            "runtime": "builtin" if manifest in builtin_plugin_manifests else "worker",
+            "running": True if manifest in builtin_plugin_manifests else plugin_supervisor.status(str(manifest.get("id") or ""))["running"],
         }
-        for manifest in plugin_manifests
+        for manifest in _all_plugin_manifests()
     ]
 
 
@@ -577,11 +583,21 @@ def save_plugin_sources(payload: PluginSourcesRequest):
 
 
 @app.post("/api/admin/plugin-store/install", dependencies=[Depends(admin_auth)])
-def install_plugin(payload: PluginInstallRequest):
+async def install_plugin(payload: PluginInstallRequest):
     if payload.source_url not in _plugin_sources():
         raise HTTPException(400, "请先添加并保存该插件源")
     try:
-        return plugin_store.install(payload.source_url, payload.plugin_id)
+        result = await asyncio.to_thread(plugin_store.install, payload.source_url, payload.plugin_id)
+        try:
+            hot = await asyncio.to_thread(plugin_supervisor.reload, payload.plugin_id)
+        except Exception as exc:
+            if result.get("backup"):
+                await asyncio.to_thread(plugin_store.restore, payload.plugin_id, result["backup"])
+            else:
+                await asyncio.to_thread(plugin_store.uninstall, payload.plugin_id)
+            logger.exception("plugin hot update failed and was rolled back: %s", payload.plugin_id)
+            raise HTTPException(400, f"插件热更新失败，已自动回滚: {exc}") from exc
+        return {**result, **hot, "backup": result.get("backup")}
     except KeyError as exc:
         raise HTTPException(404, "插件源中没有找到该插件") from exc
     except (ValueError, httpx.HTTPError) as exc:
@@ -589,9 +605,11 @@ def install_plugin(payload: PluginInstallRequest):
 
 
 @app.delete("/api/admin/plugin-store/plugins/{plugin_id}", dependencies=[Depends(admin_auth)])
-def uninstall_plugin(plugin_id: str):
+async def uninstall_plugin(plugin_id: str):
     try:
-        return plugin_store.uninstall(plugin_id)
+        result = await asyncio.to_thread(plugin_store.uninstall, plugin_id)
+        await asyncio.to_thread(plugin_supervisor.stop, plugin_id)
+        return {**result, "hot_applied": True, "restart_required": False}
     except KeyError as exc:
         raise HTTPException(404, "插件未安装") from exc
     except ValueError as exc:
@@ -618,7 +636,7 @@ def plugin_config(plugin_id: str):
 
 @app.put("/api/admin/plugins/{plugin_id}/config", dependencies=[Depends(admin_auth)])
 def save_plugin_config(plugin_id: str, payload: dict = Body(...)):
-    manifest = next((x for x in plugin_manifests if x.get("id") == plugin_id), None)
+    manifest = next((x for x in _all_plugin_manifests() if x.get("id") == plugin_id), None)
     if not manifest:
         raise HTTPException(404, "plugin not found")
     store.save_plugin_config(
@@ -630,6 +648,14 @@ def save_plugin_config(plugin_id: str, payload: dict = Body(...)):
     return {"code": 0, "message": "saved"}
 
 
+builtin_plugin_manifests = register_builtin_plugins(app, store)
+
+
+@app.api_route("/api/plugins/{plugin_id}/{path:path}", methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS", "HEAD"])
+async def plugin_proxy(plugin_id: str, path: str, request: Request):
+    return await plugin_supervisor.proxy(plugin_id, path, request)
+
+
 STATIC_DIR = Path(__file__).with_name("static")
 app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
 
@@ -639,7 +665,8 @@ def index():
     return FileResponse(STATIC_DIR / "index.html")
 
 
-plugin_manifests = register_builtin_plugins(app, store) + PluginLoader(app, store).load()
+def _all_plugin_manifests():
+    return builtin_plugin_manifests + plugin_supervisor.manifests
 
 
 def main():

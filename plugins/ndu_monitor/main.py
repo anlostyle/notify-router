@@ -25,9 +25,15 @@ def _workdir():
     return Path(os.environ.get("WORKDIR") or "/data")
 
 
+def _data_dir():
+    import os
+
+    return Path(os.environ.get("PLUGIN_DATA_DIR") or (_workdir() / "plugin-data" / PLUGIN_ID))
+
+
 class State:
     def __init__(self, path=None):
-        self.path = Path(path or (_workdir() / "plugins" / PLUGIN_ID / "state.json"))
+        self.path = Path(path or (_data_dir() / "state.json"))
         self.path.parent.mkdir(parents=True, exist_ok=True)
 
     def load(self):

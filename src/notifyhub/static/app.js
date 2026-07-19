@@ -279,7 +279,7 @@ function renderPlugins() {
     const label = plugin.update_available ? `更新到 v${plugin.version}` : plugin.installed ? '已是最新版' : '安装'
     return `<article class="entity-card"><div class="entity-head"><span class="entity-icon">${icon('plug')}</span><div class="entity-title"><h3>${escapeHtml(plugin.name || plugin.id)}</h3><p>${escapeHtml(plugin.author || '第三方开发者')} · v${escapeHtml(plugin.version)}</p></div><span class="status-badge ${plugin.installed ? 'active' : 'pending'}">${plugin.update_available ? '可更新' : plugin.installed ? '已安装' : '未安装'}</span></div><div class="entity-body"><p>${escapeHtml(plugin.description || '暂无插件说明')}</p>${plugin.installed_version ? `<small>本地版本 v${escapeHtml(plugin.installed_version)}</small>` : ''}</div><div class="entity-actions">${action ? `<button class="button primary small" data-action="${action}" data-id="${escapeHtml(plugin.id)}" data-source="${escapeHtml(plugin.source_url)}">${label}</button>` : `<button class="button secondary small" disabled>${label}</button>`}<span class="spacer"></span>${plugin.installed ? `<button class="button danger small" data-action="uninstall-plugin" data-id="${escapeHtml(plugin.id)}">卸载</button>` : ''}</div></article>`
   }).join('')}</div>` : emptyState('plug', sources.length ? '插件源中没有匹配的插件' : '添加插件源后浏览插件库', sources.length ? '请检查插件源或尝试其他关键词' : '插件源是一个公开的 JSON 索引地址')
-  return `<div class="toolbar">${sourceSummary}</div><section class="panel"><header class="panel-header"><div><h2>插件商店</h2><p>在线安装和更新插件；变更在重启容器后生效</p></div><span class="tag purple">${catalog.length} 个插件</span></header><div class="panel-body">${storeCards}</div></section><section class="panel" style="margin-top:18px"><header class="panel-header"><div><h2>已加载插件</h2><p>当前进程正在运行的插件</p></div><span class="tag">${plugins.length} 个</span></header><div class="panel-body">${installedCards}</div></section>`
+  return `<div class="toolbar">${sourceSummary}</div><section class="panel"><header class="panel-header"><div><h2>插件商店</h2><p>在线安装和更新插件；单插件热切换，失败自动回滚</p></div><span class="tag purple">${catalog.length} 个插件</span></header><div class="panel-body">${storeCards}</div></section><section class="panel" style="margin-top:18px"><header class="panel-header"><div><h2>已加载插件</h2><p>由独立 Worker 运行的插件</p></div><span class="tag">${plugins.length} 个</span></header><div class="panel-body">${installedCards}</div></section>`
 }
 
 function renderDeliveries() {
@@ -596,7 +596,12 @@ function delay(milliseconds) {
   return new Promise(resolve => setTimeout(resolve, milliseconds))
 }
 
-async function finishPluginChange(message) {
+async function finishPluginChange(message, result = {}) {
+  if (result.hot_applied && !result.restart_required) {
+    await loadCore()
+    renderCurrent()
+    return toast(message, '新版插件已热应用，Notify Router 无需重启')
+  }
   if (!state.status.admin_restart) {
     state.pluginStore = await api('/api/admin/plugin-store')
     renderCurrent()
@@ -675,17 +680,17 @@ async function handleAction(action, target) {
   if (action === 'manage-plugin-sources') return openPluginSources()
   if (action === 'install-plugin' || action === 'update-plugin') {
     const verb = action === 'update-plugin' ? '更新' : '安装'
-    return confirmModal(`${verb}插件`, `确定${verb}“${target.dataset.id}”吗？文件下载完成后需要重启容器才能生效。`, async () => {
-      await api('/api/admin/plugin-store/install', { method: 'POST', body: JSON.stringify({ source_url: target.dataset.source, plugin_id: target.dataset.id }) })
+    return confirmModal(`${verb}插件`, `确定${verb}“${target.dataset.id}”吗？系统会只热切换这个插件，失败时自动回滚。`, async () => {
+      const result = await api('/api/admin/plugin-store/install', { method: 'POST', body: JSON.stringify({ source_url: target.dataset.source, plugin_id: target.dataset.id }) })
       closeModal()
-      await finishPluginChange(`插件已${verb}`)
+      await finishPluginChange(`插件已${verb}`, result)
     })
   }
   if (action === 'uninstall-plugin') {
-    return confirmModal('卸载插件', `确定卸载“${target.dataset.id}”吗？插件文件会移入备份目录，配置和历史数据不会删除；重启容器后生效。`, async () => {
-      await api(`/api/admin/plugin-store/plugins/${encodeURIComponent(target.dataset.id)}`, { method: 'DELETE' })
+    return confirmModal('卸载插件', `确定卸载“${target.dataset.id}”吗？只会停止这个插件，代码移入备份目录，配置和历史数据不会删除。`, async () => {
+      const result = await api(`/api/admin/plugin-store/plugins/${encodeURIComponent(target.dataset.id)}`, { method: 'DELETE' })
       closeModal()
-      await finishPluginChange('插件已卸载')
+      await finishPluginChange('插件已卸载', result)
     }, true)
   }
   if (action === 'edit-plugin') return openPluginForm(state.plugins.find(item => item.id === target.dataset.id))

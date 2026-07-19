@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.5.0 - 2026-07-19
+
+- Run every third-party plugin in an isolated supervised worker process.
+- Hot-apply plugin installs, updates, and removals without restarting the router.
+- Keep the previous worker serving when candidate startup fails and restore plugin code automatically.
+- Isolate plugin dependencies and persistent runtime data by plugin ID.
+
 ## 0.4.0 - 2026-07-19
 
 - Add configurable JSON plugin sources and an admin plugin store.

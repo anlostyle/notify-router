@@ -84,6 +84,20 @@ def test_uninstall_moves_plugin_to_recoverable_backup(tmp_path):
     assert (tmp_path / "plugin-backups" / result["backup"].split("/")[-1] / "manifest.json").exists()
 
 
+def test_restore_replaces_failed_candidate_with_backup(tmp_path):
+    store = Store(tmp_path)
+    plugin = store.plugins_dir / "demo"
+    plugin.mkdir()
+    (plugin / "manifest.json").write_text('{"id":"demo","version":"1"}')
+    removed = PluginStore(store).uninstall("demo")
+    plugin.mkdir()
+    (plugin / "manifest.json").write_text('{"id":"demo","version":"2-broken"}')
+    result = PluginStore(store).restore("demo", removed["backup"])
+    assert result["restored"] is True
+    assert json.loads((plugin / "manifest.json").read_text())["version"] == "1"
+    assert Path(result["failed_backup"]).is_dir()
+
+
 def test_archive_rejects_path_traversal(tmp_path):
     archive = bundle(extra=[("repo/plugins/demo/../escape.py", "bad")])
     with pytest.raises(ValueError, match="不安全路径"):
