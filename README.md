@@ -45,8 +45,10 @@ docker compose up -d --build
   cannot add headers.
 - Access logs are disabled by default because legacy GET requests may contain
   notification text in the URL.
-- Secrets returned by management APIs are masked and blank secret fields keep
-  their stored values.
+- Authenticated management APIs return saved configuration values in plaintext.
+  The management console also displays API keys, tokens, passwords, webhook
+  URLs, and application secrets as plaintext. Restrict console access to trusted
+  administrators and always publish it through HTTPS.
 
 Runtime data is stored only in `./data`. Images and source archives do not
 contain channels, routes, tokens, phone numbers, or notification history.

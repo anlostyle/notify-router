@@ -5,30 +5,8 @@ from fastapi.testclient import TestClient
 from notifyhub.store import Store, redact_secret_text
 
 
-def test_redaction_and_masked_merge_preserve_secrets(tmp_path, monkeypatch):
+def test_admin_login_returns_plaintext_config_and_can_queue_channel_test(tmp_path, monkeypatch):
     monkeypatch.setenv("WORKDIR", str(tmp_path))
-    main = importlib.import_module("notifyhub.main")
-    current = {
-        "app": {"github_token": "github-secret"},
-        "channels": [
-            {"name": "second", "config": {"corpsecret": "two"}},
-            {"name": "first", "config": {"corpsecret": "one", "server_url": "https://example.com"}},
-            {"name": "hook", "type": "webhook", "config": {"url": "https://example.com/private-token"}},
-        ],
-    }
-    safe = main._redact(current)
-    assert safe["app"]["github_token"] == main.MASK
-    assert safe["channels"][0]["config"]["corpsecret"] == main.MASK
-    assert safe["channels"][2]["config"]["url"] == main.MASK
-    safe["channels"] = [safe["channels"][1], safe["channels"][0], safe["channels"][2]]
-    safe["channels"][0]["config"]["server_url"] = "https://new.example.com"
-    merged = main._merge_masked(safe, current)
-    assert merged["channels"][0]["name"] == "first"
-    assert merged["channels"][0]["config"]["corpsecret"] == "one"
-    assert merged["channels"][0]["config"]["server_url"] == "https://new.example.com"
-
-
-def test_admin_login_masks_config_and_can_queue_channel_test(tmp_path, monkeypatch):
     monkeypatch.setenv("NH_USER", "admin")
     monkeypatch.setenv("NH_PASSWORD", "test-password")
     main = importlib.import_module("notifyhub.main")
@@ -40,6 +18,7 @@ def test_admin_login_masks_config_and_can_queue_channel_test(tmp_path, monkeypat
             "routes": [{"route_id": "r1", "route_name": "Route", "channel_name": ["test"], "active": True}],
         }
     )
+    test_store.save_plugin_config("demo", "Demo", {"api_key": "plain-api-key", "app_secret": "plain-secret"})
     monkeypatch.setattr(main, "store", test_store)
     client = TestClient(main.app)
     try:
@@ -49,7 +28,9 @@ def test_admin_login_masks_config_and_can_queue_channel_test(tmp_path, monkeypat
         assert response.status_code == 200
         assert "HttpOnly" in response.headers["set-cookie"]
         config = client.get("/api/admin/config").json()
-        assert config["channels"][0]["config"]["webhook_url"] == main.MASK
+        assert config["channels"][0]["config"]["webhook_url"] == "http://127.0.0.1:9"
+        plugin_config = client.get("/api/admin/plugins/demo/config").json()
+        assert plugin_config == {"api_key": "plain-api-key", "app_secret": "plain-secret"}
         response = client.post("/api/admin/channels/test/test", json={})
         assert response.status_code == 200
         assert test_store.delivery_status()[0]["status"] == "pending"
@@ -82,6 +63,7 @@ def test_log_and_delivery_errors_hide_embedded_tokens():
 
 
 def test_admin_login_is_rate_limited(tmp_path, monkeypatch):
+    monkeypatch.setenv("WORKDIR", str(tmp_path))
     monkeypatch.setenv("NH_USER", "admin")
     monkeypatch.setenv("NH_PASSWORD", "test-password")
     main = importlib.import_module("notifyhub.main")

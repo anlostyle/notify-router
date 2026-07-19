@@ -1,7 +1,5 @@
 const $ = (selector, root = document) => root.querySelector(selector)
 const $$ = (selector, root = document) => [...root.querySelectorAll(selector)]
-const MASK = '••••••'
-
 const PAGES = {
   dashboard: ['运行概览', '系统看板', '查看通知服务的运行状态与近期投递表现'],
   channels: ['通知管理', '通知渠道', '管理企业微信、Telegram、Webhook 等消息出口'],
@@ -22,7 +20,7 @@ const CHANNEL_TYPES = {
       ['server_url', 'API 服务器地址', 'url', 'https://qyapi.weixin.qq.com', '支持填写自建可信 IP 代理地址'],
       ['corpid', '企业 ID', 'text', '', '企业微信管理后台的 CorpID'],
       ['agentid', '应用 AgentID', 'text', '', '企业微信自建应用的 AgentID'],
-      ['corpsecret', '应用 Secret', 'password', '', '留空表示保持现有密钥'],
+      ['corpsecret', '应用 Secret', 'password', '', '以明文保存和显示'],
       ['touser', '接收成员', 'text', '@all', '多个成员使用 | 分隔，@all 表示全部成员'],
       ['is_news', '优先使用 News 消息', 'checkbox', true, '包含图片或链接时发送 News 卡片'],
     ],
@@ -335,7 +333,7 @@ function renderLogs() {
 
 function renderSettings() {
   const app = state.config.app || {}
-  return `<div class="settings-grid"><section class="panel"><header class="panel-header"><div><h2>站点设置</h2><p>管理后台的基础信息</p></div><button class="button secondary small" data-action="edit-settings">${icon('edit')}编辑</button></header><div class="panel-body settings-list"><div class="info-row"><span>应用名称</span><strong>${escapeHtml(app.app_name || 'Notify')}</strong></div><div class="info-row"><span>站点地址</span><strong>${escapeHtml(app.site_url || location.origin)}</strong></div><div class="info-row"><span>记录保留</span><strong>${escapeHtml(app.record_retention_days || 90)} 天</strong></div><div class="info-row"><span>GitHub Token</span><strong>${app.github_token ? '已配置' : '未配置'}</strong></div></div></section><section class="panel"><header class="panel-header"><div><h2>运行信息</h2><p>当前实例状态</p></div><span class="status-badge active">正常</span></header><div class="panel-body settings-list"><div class="info-row"><span>系统版本</span><code class="code">v${escapeHtml(state.status.version)}</code></div><div class="info-row"><span>通知渠道</span><strong>${state.status.channels}</strong></div><div class="info-row"><span>通知通道</span><strong>${state.status.routes}</strong></div><div class="info-row"><span>插件任务</span><span class="status-badge ${state.status.plugin_tasks ? 'active' : 'inactive'}">${state.status.plugin_tasks ? '运行中' : '已暂停'}</span></div><div class="info-row"><span>API 文档</span><a class="code" href="/docs" target="_blank" rel="noopener">/docs</a></div></div></section></div>`
+  return `<div class="settings-grid"><section class="panel"><header class="panel-header"><div><h2>站点设置</h2><p>管理后台的基础信息</p></div><button class="button secondary small" data-action="edit-settings">${icon('edit')}编辑</button></header><div class="panel-body settings-list"><div class="info-row"><span>应用名称</span><strong>${escapeHtml(app.app_name || 'Notify')}</strong></div><div class="info-row"><span>站点地址</span><strong>${escapeHtml(app.site_url || location.origin)}</strong></div><div class="info-row"><span>记录保留</span><strong>${escapeHtml(app.record_retention_days || 90)} 天</strong></div><div class="info-row"><span>GitHub Token</span><code class="code">${escapeHtml(app.github_token || '未配置')}</code></div></div></section><section class="panel"><header class="panel-header"><div><h2>运行信息</h2><p>当前实例状态</p></div><span class="status-badge active">正常</span></header><div class="panel-body settings-list"><div class="info-row"><span>系统版本</span><code class="code">v${escapeHtml(state.status.version)}</code></div><div class="info-row"><span>通知渠道</span><strong>${state.status.channels}</strong></div><div class="info-row"><span>通知通道</span><strong>${state.status.routes}</strong></div><div class="info-row"><span>插件任务</span><span class="status-badge ${state.status.plugin_tasks ? 'active' : 'inactive'}">${state.status.plugin_tasks ? '运行中' : '已暂停'}</span></div><div class="info-row"><span>API 文档</span><a class="code" href="/docs" target="_blank" rel="noopener">/docs</a></div></div></section></div>`
 }
 
 function emptyState(iconName, title, description) {
@@ -343,8 +341,8 @@ function emptyState(iconName, title, description) {
 }
 
 function formField(name, label, type = 'text', value = '', placeholder = '', hint = '', options = []) {
-  const safeValue = value === MASK && type === 'password' ? '' : value ?? ''
-  const note = hint || (type === 'password' && value === MASK ? '已安全保存，留空保持原值' : '')
+  const safeValue = value ?? ''
+  const note = hint
   let control
   if (type === 'checkbox') {
     control = `<label class="check-field"><input name="${escapeHtml(name)}" type="checkbox" ${value ? 'checked' : ''}><span>${escapeHtml(note || label)}</span></label>`
@@ -355,7 +353,8 @@ function formField(name, label, type = 'text', value = '', placeholder = '', hin
   } else if (type === 'select') {
     control = `<select name="${escapeHtml(name)}">${options.map(([optionValue, optionLabel]) => `<option value="${escapeHtml(optionValue)}" ${String(safeValue) === String(optionValue) ? 'selected' : ''}>${escapeHtml(optionLabel)}</option>`).join('')}</select>`
   } else {
-    control = `<input name="${escapeHtml(name)}" type="${escapeHtml(type)}" value="${escapeHtml(safeValue)}" placeholder="${escapeHtml(placeholder || (value === MASK ? '留空保持现有值' : ''))}">`
+    const inputType = type === 'password' ? 'text' : type
+    control = `<input name="${escapeHtml(name)}" type="${escapeHtml(inputType)}" value="${escapeHtml(safeValue)}" placeholder="${escapeHtml(placeholder)}" autocomplete="off">`
   }
   return `<label class="field"><span>${escapeHtml(label)}</span>${control}${note ? `<small>${escapeHtml(note)}</small>` : ''}</label>`
 }
@@ -434,7 +433,6 @@ function openChannelForm(channel = null) {
         }
         let value = String(data.get(`cfg_${key}`) ?? '').trim()
         if (fieldType === 'number' && value !== '') value = Number(value)
-        if (fieldType === 'password' && !value && original.config?.[key] === MASK) value = MASK
         config[key] = value === '' && defaultValue !== '' ? defaultValue : value
       }
       const channels = [...(state.config.channels || [])]
@@ -529,8 +527,7 @@ function pluginField(field, value) {
   }
   if (field.fieldType === 'enum' && options.length) return formField(`plugin_${name}`, field.label || name, 'select', value ?? field.defaultValue ?? '', '', field.helpText || '', options)
   const type = field.fieldType === 'number' ? 'number' : field.fieldType === 'text' ? 'textarea' : isSecretField(name) ? 'password' : 'text'
-  const hint = isSecretField(name) && value === MASK ? '已安全保存，留空保持原值' : field.helpText || ''
-  return formField(`plugin_${name}`, field.label || name, type, Array.isArray(value) ? value.join(',') : value ?? field.defaultValue ?? '', '', hint)
+  return formField(`plugin_${name}`, field.label || name, type, Array.isArray(value) ? value.join(',') : value ?? field.defaultValue ?? '', '', field.helpText || '')
 }
 
 function openPluginSources() {
@@ -569,7 +566,6 @@ async function openPluginForm(plugin) {
         }
         let value = String(data.get(`plugin_${name}`) ?? '').trim()
         if (field.fieldType === 'number' && value !== '') value = Number(value)
-        if (isSecretField(name) && !value && config[name] === MASK) value = MASK
         next[name] = value
       }
       await api(`/api/admin/plugins/${encodeURIComponent(plugin.id)}/config`, { method: 'PUT', body: JSON.stringify(next) })
@@ -583,7 +579,7 @@ function openSettingsForm() {
   const app = state.config.app || {}
   openModal({
     eyebrow: '系统管理', title: '编辑站点设置',
-    body: `${formField('app_name', '应用名称', 'text', app.app_name || 'Notify')}${formField('site_url', '站点公网地址', 'url', app.site_url || '', 'https://notify.example.com', '用于生成对外接口地址')}${formField('record_retention_days', '记录保留天数', 'number', app.record_retention_days || 90)}${formField('github_token', 'GitHub Token', 'password', app.github_token || '', '', '可选；留空保持现有 Token')}`,
+    body: `${formField('app_name', '应用名称', 'text', app.app_name || 'Notify')}${formField('site_url', '站点公网地址', 'url', app.site_url || '', 'https://notify.example.com', '用于生成对外接口地址')}${formField('record_retention_days', '记录保留天数', 'number', app.record_retention_days || 90)}${formField('github_token', 'GitHub Token', 'password', app.github_token || '', '', '以明文保存和显示')}`,
     onSubmit: async form => {
       const data = new FormData(form)
       const githubToken = String(data.get('github_token') || '').trim()
@@ -592,7 +588,7 @@ function openSettingsForm() {
         app_name: String(data.get('app_name') || '').trim() || 'Notify',
         site_url: String(data.get('site_url') || '').trim(),
         record_retention_days: Math.max(1, Number(data.get('record_retention_days') || 90)),
-        github_token: !githubToken && app.github_token === MASK ? MASK : githubToken,
+        github_token: githubToken,
       }
       await saveConfig({ ...state.config, app: nextApp }, '系统设置已更新')
     },

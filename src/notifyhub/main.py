@@ -65,7 +65,6 @@ worker = DeliveryWorker(store)
 plugin_store = PluginStore(store)
 plugin_supervisor = PluginSupervisor(store)
 security = HTTPBasic(auto_error=False)
-MASK = "••••••"
 SESSION_COOKIE = "notify_session"
 LOGIN_FAILURES = deque(maxlen=1000)
 LOGIN_LOCK = threading.Lock()
@@ -186,56 +185,6 @@ def admin_auth(credentials: HTTPBasicCredentials | None = Depends(security), not
     if credentials and _valid_admin(credentials.username, credentials.password):
         return
     raise HTTPException(401, "authentication required")
-
-
-def _secret_key(key):
-    key = str(key).lower().replace("-", "_")
-    return key in {"key", "authorization", "webhook_url"} or any(
-        part in key for part in ("secret", "token", "password", "api_key", "apikey", "aeskey")
-    )
-
-
-def _redact(value, key=""):
-    if _secret_key(key) and value not in (None, ""):
-        return MASK
-    if isinstance(value, dict):
-        result = {name: _redact(item, name) for name, item in value.items()}
-        channel_type = str(value.get("type") or "").lower()
-        if channel_type in {"webhook", "discord", "dingtalk", "bark"} and isinstance(result.get("config"), dict):
-            for name in {"url", "webhook_url", "push_url"}:
-                if result["config"].get(name):
-                    result["config"][name] = MASK
-        return result
-    if isinstance(value, list):
-        return [_redact(item) for item in value]
-    return value
-
-
-def _merge_masked(value, current):
-    if value == MASK:
-        return current
-    if isinstance(value, dict):
-        previous = current if isinstance(current, dict) else {}
-        return {key: _merge_masked(item, previous.get(key)) for key, item in value.items()}
-    if isinstance(value, list):
-        previous = current if isinstance(current, list) else []
-        identity = next(
-            (key for key in ("name", "route_id", "id", "plugin_id") if any(isinstance(item, dict) and key in item for item in value)),
-            None,
-        )
-        by_identity = {
-            item.get(identity): item for item in previous if identity and isinstance(item, dict) and identity in item
-        }
-        return [
-            _merge_masked(
-                item,
-                by_identity.get(item.get(identity), {})
-                if identity and isinstance(item, dict)
-                else (previous[index] if index < len(previous) else None),
-            )
-            for index, item in enumerate(value)
-        ]
-    return value
 
 
 def enqueue(payload):
@@ -507,13 +456,13 @@ def admin_status():
 
 @app.get("/api/admin/config", dependencies=[Depends(admin_auth)])
 def admin_config():
-    return _redact(store.config)
+    return store.config
 
 
 @app.put("/api/admin/config", dependencies=[Depends(admin_auth)])
 def save_config(payload: dict = Body(...)):
     try:
-        store.save_config(_merge_masked(payload, store.config))
+        store.save_config(payload)
     except ValueError as exc:
         raise HTTPException(400, str(exc)) from exc
     return {"code": 0, "message": "saved"}
@@ -663,7 +612,7 @@ def restart_service():
 
 @app.get("/api/admin/plugins/{plugin_id}/config", dependencies=[Depends(admin_auth)])
 def plugin_config(plugin_id: str):
-    return _redact(store.get_plugin_config(plugin_id))
+    return store.get_plugin_config(plugin_id)
 
 
 @app.put("/api/admin/plugins/{plugin_id}/config", dependencies=[Depends(admin_auth)])
@@ -674,7 +623,7 @@ def save_plugin_config(plugin_id: str, payload: dict = Body(...)):
     store.save_plugin_config(
         plugin_id,
         manifest.get("name") or plugin_id,
-        _merge_masked(payload, store.get_plugin_config(plugin_id)),
+        payload,
         1,
     )
     return {"code": 0, "message": "saved"}
