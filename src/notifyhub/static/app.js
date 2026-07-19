@@ -7,7 +7,9 @@ const PAGES = {
   channels: ['通知管理', '通知渠道', '管理企业微信、Telegram、Webhook 等消息出口'],
   routes: ['通知管理', '通知通道', '将推送入口、通知模板与发送渠道连接起来'],
   templates: ['通知管理', '通知模板', '统一管理不同服务的消息格式并实时预览'],
-  plugins: ['扩展能力', '插件管理', '配置现有插件和第三方服务集成'],
+  monitors: ['服务中心', '监控中心', '集中查看服务、主机、容器与备份的当前状态和事件'],
+  tasks: ['服务中心', '任务中心', '查看定时任务、系统任务及每次执行结果'],
+  plugins: ['应用与插件', '插件管理', '管理插件商店、运行能力和第三方服务集成'],
   deliveries: ['运行状态', '投递历史', '追踪每一次发送、失败原因与重试状态'],
   logs: ['运行状态', '系统日志', '查看当前进程最近的运行日志'],
   settings: ['系统管理', '系统设置', '管理站点信息、安全参数与运行环境'],
@@ -43,6 +45,8 @@ const state = {
   templates: [],
   plugins: [],
   pluginStore: { sources: [], plugins: [] },
+  monitors: { items: [], events: [], summary: {} },
+  tasks: { items: [], runs: [], summary: {} },
   deliveries: [],
   logs: [],
   query: '',
@@ -142,6 +146,8 @@ function setPageActions(page) {
     channels: `<button class="button primary" data-action="add-channel" aria-label="新增渠道">${icon('plus')}<span>新增渠道</span></button>`,
     routes: `<button class="button primary" data-action="add-route" aria-label="新增通道">${icon('plus')}<span>新增通道</span></button>`,
     templates: `<button class="button primary" data-action="add-template" aria-label="新增模板">${icon('plus')}<span>新增模板</span></button>`,
+    monitors: `<button class="button secondary" data-action="refresh" aria-label="刷新">${icon('refresh')}<span>刷新</span></button>`,
+    tasks: `<button class="button secondary" data-action="refresh" aria-label="刷新">${icon('refresh')}<span>刷新</span></button>`,
     deliveries: `<button class="button secondary" data-action="refresh" aria-label="刷新">${icon('refresh')}<span>刷新</span></button>`,
     logs: `<button class="button secondary" data-action="refresh" aria-label="刷新">${icon('refresh')}<span>刷新</span></button>`,
     plugins: `<button class="button secondary" data-action="manage-plugin-sources" aria-label="管理插件源">${icon('settings')}<span>插件源</span></button>`,
@@ -183,6 +189,16 @@ async function renderPage() {
     $('#page-content').innerHTML = '<div class="skeleton"></div>'
     state.pluginStore = await api('/api/admin/plugin-store')
   }
+  if (page === 'monitors') {
+    $('#page-content').innerHTML = '<div class="skeleton"></div>'
+    state.monitors = await api('/api/admin/monitors')
+    $('#nav-monitors').textContent = state.monitors.summary?.attention || state.monitors.summary?.total || 0
+  }
+  if (page === 'tasks') {
+    $('#page-content').innerHTML = '<div class="skeleton"></div>'
+    state.tasks = await api('/api/admin/tasks')
+    $('#nav-tasks').textContent = state.tasks.summary?.total || 0
+  }
   renderCurrent()
 }
 
@@ -192,12 +208,33 @@ function renderCurrent() {
     channels: renderChannels,
     routes: renderRoutes,
     templates: renderTemplates,
+    monitors: renderMonitors,
+    tasks: renderTasks,
     plugins: renderPlugins,
     deliveries: renderDeliveries,
     logs: renderLogs,
     settings: renderSettings,
   }
   $('#page-content').innerHTML = renderers[currentPage()]()
+}
+
+function renderMonitors() {
+  const summary = state.monitors.summary || {}
+  const items = (state.monitors.items || []).filter(item => matches(item.name, item.provider, item.category, item.status, item.summary))
+  const events = state.monitors.events || []
+  const cards = items.length ? `<div class="entity-grid">${items.map(item => {
+    const healthy = ['up', 'healthy', 'ok'].includes(item.status)
+    return `<article class="entity-card"><div class="entity-head"><span class="entity-icon">${icon('monitor')}</span><div class="entity-title"><h3>${escapeHtml(item.name)}</h3><p>${escapeHtml(item.provider)} · ${escapeHtml(item.category)}</p></div><span class="status-badge ${healthy ? 'active' : 'failed'}">${healthy ? '正常' : '需关注'}</span></div><div class="entity-body"><p>${escapeHtml(item.summary || '暂无状态说明')}</p></div><div class="entity-actions"><small>检查：${escapeHtml(formatDate(item.last_checked_at))}</small><span class="spacer"></span><span class="tag">${escapeHtml(item.status)}</span></div></article>`
+  }).join('')}</div>` : emptyState('monitor', '还没有监控数据', 'NDU、Watchtower、哪吒或 PVE 产生状态后会显示在这里')
+  const history = events.length ? `<div class="table-wrap"><table class="data-table"><thead><tr><th>事件</th><th>来源</th><th>状态</th><th>时间</th></tr></thead><tbody>${events.slice(0,50).map(item => `<tr><td><div class="cell-title"><strong>${escapeHtml(item.title)}</strong><small>${escapeHtml(item.summary)}</small></div></td><td>${escapeHtml(item.source)}</td><td><span class="status-badge ${item.status === 'resolved' ? 'active' : 'pending'}">${item.status === 'resolved' ? '已恢复' : '事件'}</span></td><td>${escapeHtml(formatDate(item.created_at))}</td></tr>`).join('')}</tbody></table></div>` : ''
+  return `<div class="stats-grid">${statCard('监控项', summary.total || 0, '统一状态入口', 'monitor', 'purple')}${statCard('运行正常', summary.healthy || 0, '最近检查健康', 'check', 'green')}${statCard('需要关注', summary.attention || 0, '异常或警告', 'alert', 'orange')}</div>${cards}<section class="panel" style="margin-top:18px"><header class="panel-header"><div><h2>状态事件</h2><p>异常与恢复历史</p></div></header><div class="panel-body">${history || '暂无状态变化'}</div></section>`
+}
+
+function renderTasks() {
+  const summary = state.tasks.summary || {}
+  const items = (state.tasks.items || []).filter(item => matches(item.name, item.plugin_id, item.schedule, item.last_status))
+  const rows = items.length ? `<div class="table-wrap"><table class="data-table"><thead><tr><th>任务</th><th>来源</th><th>计划</th><th>最近状态</th><th>最近完成</th></tr></thead><tbody>${items.map(item => `<tr><td><strong>${escapeHtml(item.name)}</strong></td><td><span class="tag purple">${escapeHtml(item.plugin_id)}</span></td><td><code class="code">${escapeHtml(item.schedule)}</code></td><td><span class="status-badge ${item.last_status === 'success' ? 'active' : item.last_status === 'failed' ? 'failed' : 'pending'}">${escapeHtml(item.last_status)}</span></td><td>${escapeHtml(formatDate(item.last_finished_at))}</td></tr>`).join('')}</tbody></table></div>` : emptyState('task', '还没有已注册任务', 'Reminder、NSRSS 等插件注册定时任务后会显示在这里')
+  return `<div class="stats-grid">${statCard('全部任务', summary.total || 0, '插件与系统任务', 'task', 'purple')}${statCard('已启用', summary.enabled || 0, '由调度器管理', 'check', 'green')}${statCard('执行失败', summary.failed || 0, `运行中 ${summary.running || 0}`, 'alert', 'orange')}</div>${rows}`
 }
 
 function renderDashboard() {
@@ -272,7 +309,7 @@ function renderPlugins() {
     ? sources.map(source => `<span class="tag ${source.status === 'error' ? 'danger' : ''}" title="${escapeHtml(source.error || source.url)}">${escapeHtml(source.name)} · ${source.status === 'ok' ? '正常' : '异常'}</span>`).join(' ')
     : '<span class="form-note">还没有插件源，点击右上角“插件源”添加地址。</span>'
   const installedCards = plugins.length ? `<div class="entity-grid">${plugins.map(plugin => `
-    <article class="entity-card"><div class="entity-head"><span class="entity-icon">${icon('plug')}</span><div class="entity-title"><h3>${escapeHtml(plugin.name || plugin.id)}</h3><p>${escapeHtml(plugin.id)} · v${escapeHtml(plugin.version || '—')}</p></div><span class="status-badge active">已加载</span></div><div class="entity-body"><p>${escapeHtml(plugin.description || '暂无插件说明')}</p></div><div class="entity-actions">${plugin.has_frontend ? `<button class="button secondary small" data-action="open-plugin" data-id="${escapeHtml(plugin.id)}">打开页面</button>` : ''}<span class="spacer"></span><button class="button secondary small" data-action="edit-plugin" data-id="${escapeHtml(plugin.id)}">${icon('settings')}配置</button></div></article>`).join('')}</div>`
+    <article class="entity-card"><div class="entity-head"><span class="entity-icon">${icon('plug')}</span><div class="entity-title"><h3>${escapeHtml(plugin.name || plugin.id)}</h3><p>${escapeHtml(plugin.id)} · v${escapeHtml(plugin.version || '—')}</p></div><span class="status-badge active">已加载</span></div><div class="entity-body"><p>${escapeHtml(plugin.description || '暂无插件说明')}</p><div>${(plugin.capabilities || []).map(value => `<span class="tag purple">${escapeHtml(value)}</span>`).join(' ')}</div></div><div class="entity-actions">${plugin.has_frontend ? `<button class="button secondary small" data-action="open-plugin" data-id="${escapeHtml(plugin.id)}">打开页面</button>` : ''}<span class="spacer"></span><button class="button secondary small" data-action="edit-plugin" data-id="${escapeHtml(plugin.id)}">${icon('settings')}配置</button></div></article>`).join('')}</div>`
     : '<div class="empty-state"><p>当前没有已加载的可选插件</p></div>'
   const storeCards = catalog.length ? `<div class="entity-grid">${catalog.map(plugin => {
     const action = plugin.update_available ? 'update-plugin' : plugin.installed ? '' : 'install-plugin'

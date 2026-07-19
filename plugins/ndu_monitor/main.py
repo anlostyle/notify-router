@@ -11,6 +11,7 @@ from fastapi import APIRouter
 from notifyhub.controller.server import server
 from notifyhub.plugins.common import after_setup
 from notifyhub.plugins.utils import get_plugin_config
+from notifyhub.plugins.sdk import record_monitor
 
 
 PLUGIN_ID = "ndu_monitor"
@@ -200,8 +201,10 @@ class Poller(threading.Thread):
             if _enabled(config.get("enabled", "1")):
                 try:
                     result = poll_once(config)
+                    record_monitor("registry", "NDU 镜像与仓库更新", "healthy", f"已检查 {result['releases']} 个仓库、{result['images']} 个镜像", "container")
                     logger.info("%s 检查完成: %s", LOG_PREFIX, result)
                 except Exception as exc:
+                    record_monitor("registry", "NDU 镜像与仓库更新", "error", "最近一次检查失败", "container")
                     logger.error("%s 检查失败: %s", LOG_PREFIX, exc, exc_info=True)
             time.sleep(_poll_seconds(config))
 

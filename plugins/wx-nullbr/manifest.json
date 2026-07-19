@@ -6,6 +6,8 @@
     "logo": "https://nanako-1253183981.cos.ap-guangzhou.myqcloud.com/project/notifyhub/coverimg/wx_nullbr.png",
     "thumbnailurl": "https://nanako-1253183981.cos.ap-guangzhou.myqcloud.com/project/notifyhub/coverimg/wx_nullbr_thumb.png",
     "version": "0.0.1",
+    "schema_version": 2,
+    "capabilities": ["integration.provider", "ui.page"],
     "documentation": "",
     "path": "/wx-nullbr",
     "configField": [

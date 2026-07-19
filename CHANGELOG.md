@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.6.0 - 2026-07-19
+
+- Establish notification, monitoring, task, and marketplace domain boundaries.
+- Add normalized monitor state, status events, scheduled tasks, and task run history.
+- Add Monitoring Center and Task Center pages to the administration console.
+- Record NDU, Watchtower, Nezha, and PVE backup health in the monitoring domain.
+- Track Reminder and NSRSS cron execution through the shared task runtime.
+- Introduce plugin manifest schema v2 capability declarations.
+
 ## 0.5.0 - 2026-07-19
 
 - Run every third-party plugin in an isolated supervised worker process.

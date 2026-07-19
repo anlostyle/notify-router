@@ -6,6 +6,8 @@
   "logo": "",
   "thumbnailurl": "",
   "version": "0.1.0",
+  "schema_version": 2,
+  "capabilities": ["monitor.provider", "task.handler", "notify.action"],
   "preserve": ["state.json"],
   "documentation": "",
   "path": "/ndu_monitor",

@@ -152,6 +152,55 @@ class Store:
                 );
                 CREATE INDEX IF NOT EXISTS idx_deliveries_ready
                     ON deliveries(status, next_attempt_at, id);
+                CREATE TABLE IF NOT EXISTS platform_events (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    domain TEXT NOT NULL,
+                    source TEXT NOT NULL,
+                    event_type TEXT NOT NULL,
+                    entity_key TEXT NOT NULL,
+                    severity TEXT NOT NULL,
+                    title TEXT NOT NULL,
+                    summary TEXT NOT NULL,
+                    status TEXT NOT NULL,
+                    created_at TEXT NOT NULL
+                );
+                CREATE INDEX IF NOT EXISTS idx_platform_events_domain_created
+                    ON platform_events(domain, id DESC);
+                CREATE TABLE IF NOT EXISTS monitors (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    provider TEXT NOT NULL,
+                    entity_key TEXT NOT NULL UNIQUE,
+                    name TEXT NOT NULL,
+                    category TEXT NOT NULL,
+                    status TEXT NOT NULL,
+                    summary TEXT NOT NULL,
+                    metadata TEXT NOT NULL DEFAULT '{}',
+                    last_checked_at TEXT NOT NULL,
+                    last_changed_at TEXT NOT NULL
+                );
+                CREATE TABLE IF NOT EXISTS platform_tasks (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    task_id TEXT NOT NULL UNIQUE,
+                    plugin_id TEXT NOT NULL,
+                    name TEXT NOT NULL,
+                    category TEXT NOT NULL,
+                    schedule TEXT NOT NULL,
+                    enabled INTEGER NOT NULL,
+                    last_status TEXT NOT NULL DEFAULT 'never',
+                    last_started_at TEXT,
+                    last_finished_at TEXT,
+                    updated_at TEXT NOT NULL
+                );
+                CREATE TABLE IF NOT EXISTS task_runs (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    task_id TEXT NOT NULL,
+                    status TEXT NOT NULL,
+                    started_at TEXT NOT NULL,
+                    finished_at TEXT,
+                    duration_ms INTEGER,
+                    error TEXT NOT NULL DEFAULT ''
+                );
+                CREATE INDEX IF NOT EXISTS idx_task_runs_task_id ON task_runs(task_id, id DESC);
                 """
             )
             db.execute(
@@ -521,6 +570,83 @@ class Store:
                 (time.time(), localnow(), delivery_id),
             )
             return result.rowcount == 1
+
+    def record_event(self, domain, source, event_type, entity_key, severity, title, summary, status="open"):
+        now = localnow()
+        with self.connect() as db:
+            cursor = db.execute(
+                """INSERT INTO platform_events
+                   (domain, source, event_type, entity_key, severity, title, summary, status, created_at)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                (domain, source, event_type, entity_key, severity, str(title), redact_secret_text(summary)[:2000], status, now),
+            )
+            return cursor.lastrowid
+
+    def update_monitor(self, provider, entity_key, name, category, status, summary="", metadata=None):
+        now = localnow()
+        payload = json.dumps(metadata or {}, ensure_ascii=False)
+        with self.connect() as db:
+            previous = db.execute("SELECT status FROM monitors WHERE entity_key=?", (entity_key,)).fetchone()
+            changed = not previous or previous[0] != status
+            db.execute(
+                """INSERT INTO monitors
+                   (provider, entity_key, name, category, status, summary, metadata, last_checked_at, last_changed_at)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                   ON CONFLICT(entity_key) DO UPDATE SET
+                     provider=excluded.provider, name=excluded.name, category=excluded.category,
+                     status=excluded.status, summary=excluded.summary, metadata=excluded.metadata,
+                     last_checked_at=excluded.last_checked_at,
+                     last_changed_at=CASE WHEN monitors.status<>excluded.status THEN excluded.last_changed_at ELSE monitors.last_changed_at END""",
+                (provider, entity_key, name, category, status, redact_secret_text(summary)[:1000], payload, now, now),
+            )
+        if changed:
+            self.record_event("monitor", provider, "status_changed", entity_key, "error" if status in {"down", "error"} else "info", name, summary, "open" if status in {"down", "error"} else "resolved")
+
+    def list_monitors(self):
+        with self.connect() as db:
+            return [dict(row) for row in db.execute("SELECT * FROM monitors ORDER BY status IN ('down','error') DESC, name")]
+
+    def list_events(self, domain=None, limit=100):
+        with self.connect() as db:
+            if domain:
+                rows = db.execute("SELECT * FROM platform_events WHERE domain=? ORDER BY id DESC LIMIT ?", (domain, limit))
+            else:
+                rows = db.execute("SELECT * FROM platform_events ORDER BY id DESC LIMIT ?", (limit,))
+            return [dict(row) for row in rows]
+
+    def register_task(self, task_id, plugin_id, name, category, schedule, enabled_value=True):
+        now = localnow()
+        with self.connect() as db:
+            db.execute(
+                """INSERT INTO platform_tasks (task_id, plugin_id, name, category, schedule, enabled, updated_at)
+                   VALUES (?, ?, ?, ?, ?, ?, ?)
+                   ON CONFLICT(task_id) DO UPDATE SET plugin_id=excluded.plugin_id, name=excluded.name,
+                     category=excluded.category, schedule=excluded.schedule, enabled=excluded.enabled, updated_at=excluded.updated_at""",
+                (task_id, plugin_id, name, category, schedule, int(bool(enabled_value)), now),
+            )
+
+    def start_task_run(self, task_id):
+        now = localnow()
+        with self.connect() as db:
+            db.execute("UPDATE platform_tasks SET last_status='running', last_started_at=?, updated_at=? WHERE task_id=?", (now, now, task_id))
+            return db.execute("INSERT INTO task_runs (task_id,status,started_at) VALUES (?,'running',?)", (task_id, now)).lastrowid
+
+    def finish_task_run(self, task_id, run_id, started, error=None):
+        now = localnow()
+        duration = max(0, int((time.time() - started) * 1000))
+        status = "failed" if error else "success"
+        safe_error = redact_secret_text(error)[:2000] if error else ""
+        with self.connect() as db:
+            db.execute("UPDATE task_runs SET status=?, finished_at=?, duration_ms=?, error=? WHERE id=?", (status, now, duration, safe_error, run_id))
+            db.execute("UPDATE platform_tasks SET last_status=?, last_finished_at=?, updated_at=? WHERE task_id=?", (status, now, now, task_id))
+
+    def list_tasks(self):
+        with self.connect() as db:
+            return [dict(row) for row in db.execute("SELECT * FROM platform_tasks ORDER BY plugin_id, name")]
+
+    def list_task_runs(self, limit=100):
+        with self.connect() as db:
+            return [dict(row) for row in db.execute("SELECT * FROM task_runs ORDER BY id DESC LIMIT ?", (limit,))]
 
     def get_plugin_data(self, plugin_id):
         with self.connect() as db:

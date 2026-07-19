@@ -6,6 +6,8 @@
     "logo": "/data/plugins/reminder/reminder.png",
     "thumbnailurl": "/data/plugins/reminder/reminder_thumb.png",
     "version": "0.1.0",
+    "schema_version": 2,
+    "capabilities": ["task.handler", "notify.action", "ui.page"],
     "documentation": "",
     "path": "/reminder",
     "configField": [],

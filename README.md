@@ -131,6 +131,17 @@ API keys, Enterprise WeChat credentials, routes, and keywords. See
 [`plugins/README.md`](plugins/README.md) for the included plugins and required
 configuration.
 
+## Platform domains
+
+The 0.6 architecture keeps one deployable container while separating product
+domains internally. Notification delivery remains compatible with the original
+API. Monitoring owns normalized health state and incidents; Tasks owns schedules
+and run history; Marketplace owns plugin distribution; the worker runtime is a
+shared core capability. Manifest schema v2 lets plugins declare capabilities
+such as `monitor.provider`, `task.handler`, `notify.action`, and
+`integration.provider` so features can appear in the appropriate center instead
+of being grouped only by installation package.
+
 ## Development
 
 ```bash

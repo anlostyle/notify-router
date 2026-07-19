@@ -6,6 +6,8 @@
     "logo": "",
     "thumbnailurl": "",
     "version": "0.0.2",
+    "schema_version": 2,
+    "capabilities": ["task.handler", "monitor.provider", "notify.action"],
     "documentation": "",
     "path": "/nsrss",
     "configField": [

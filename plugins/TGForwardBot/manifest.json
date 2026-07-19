@@ -6,6 +6,8 @@
     "logo": "https://nanako-1253183981.cos.ap-guangzhou.myqcloud.com/project/notifyhub/coverimg/tgforwardbot_logo.png",
     "thumbnailurl": "https://nanako-1253183981.cos.ap-guangzhou.myqcloud.com/project/notifyhub/coverimg/tgforwardbot_thumb.png",
     "version": "0.0.1",
+    "schema_version": 2,
+    "capabilities": ["integration.provider", "notify.source", "service.worker"],
     "documentation": "",
     "path": "/TGForwardBot",
     "configField": [

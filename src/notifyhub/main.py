@@ -1,4 +1,5 @@
 import asyncio
+import hashlib
 import hmac
 import json
 import logging
@@ -30,6 +31,8 @@ from .plugins.common import run_after_setup_hooks
 from .service_compat import parse_emby, parse_pve, parse_watchtower
 from .store import Store, enabled, redact_secret_text
 from .worker import DeliveryWorker
+from .modules.monitor.api import build_monitor_router
+from .modules.tasks.api import build_task_router
 
 
 logging.basicConfig(level=os.environ.get("LOG_LEVEL", "INFO"), format="%(asctime)s %(levelname)s %(name)s %(message)s")
@@ -246,6 +249,10 @@ def enqueue(payload):
             title = f"🔴 设备离线｜{title.removeprefix('[事件] ').removesuffix(offline_suffix)}"
         elif title.startswith("[恢复] "):
             title = f"✅ 设备恢复｜{title.removeprefix('[恢复] ').removesuffix(offline_suffix)}"
+        monitor_status = "up" if title.startswith("✅") else "down"
+        monitor_name = title.split("｜", 1)[-1]
+        entity = "nezha:" + hashlib.sha256(payload.route_id.encode()).hexdigest()[:12]
+        store.update_monitor("nezha", entity, monitor_name, "host", monitor_status, title)
     try:
         store.enqueue_router(
             payload.route_id,
@@ -416,7 +423,7 @@ async def watchtower_compatible(route_id: str, request: Request):
         event, template_type, context = parse_watchtower(payload)
     except (ValueError, TypeError) as exc:
         return notify_error(str(exc))
-    return enqueue_event(
+    result = enqueue_event(
         route_id,
         event,
         template_type,
@@ -426,6 +433,9 @@ async def watchtower_compatible(route_id: str, request: Request):
         payload.get("push_link_url"),
         f"{LEGACY_COVER_URL}/Watchtower.png",
     )
+    entity = "watchtower:" + hashlib.sha256(route_id.encode()).hexdigest()[:12]
+    store.update_monitor("watchtower", entity, str(context.get("server_name") or "Watchtower"), "container", "healthy", "已接收容器更新检查结果")
+    return result
 
 
 @app.api_route("/api/service/pve/notify/{route_id}", methods=["GET"], dependencies=[Depends(api_auth)])
@@ -449,7 +459,7 @@ async def pve_compatible(route_id: str, request: Request):
                 )
             )
         return notify_error(str(exc))
-    return enqueue_event(
+    result = enqueue_event(
         route_id,
         event,
         template_type,
@@ -457,6 +467,11 @@ async def pve_compatible(route_id: str, request: Request):
         "PVE事件通知已进入发送队列",
         fallback_img_url=f"{LEGACY_COVER_URL}/PVEBackup.png",
     )
+    task_status = str(context.get("task_status") or "").lower()
+    status = "healthy" if task_status in {"ok", "success", "successful"} else "error"
+    entity = "pve-backup:" + hashlib.sha256(route_id.encode()).hexdigest()[:12]
+    store.update_monitor("pve", entity, str(context.get("machine_name") or "PVE 备份"), "backup", status, f"最近备份状态：{task_status or 'unknown'}")
+    return result
 
 
 @app.get("/api/admin/status", dependencies=[Depends(admin_auth)])
@@ -649,6 +664,8 @@ def save_plugin_config(plugin_id: str, payload: dict = Body(...)):
 
 
 builtin_plugin_manifests = register_builtin_plugins(app, store)
+app.include_router(build_monitor_router(store, admin_auth))
+app.include_router(build_task_router(store, admin_auth))
 
 
 @app.api_route("/api/plugins/{plugin_id}/{path:path}", methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS", "HEAD"])

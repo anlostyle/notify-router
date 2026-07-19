@@ -6,6 +6,8 @@
     "logo": "https://s1.locimg.com/2025/01/03/13a09e2f7cb3a.png",
     "thumbnailurl": "https://s1.locimg.com/2025/01/03/13a09e2f7cb3a.png",
     "version": "0.0.2",
+    "schema_version": 2,
+    "capabilities": ["integration.provider", "ui.page"],
     "documentation": "",
     "path": "/wx-media302-save",
     "configField": [

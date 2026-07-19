@@ -6,6 +6,8 @@
   "logo": "",
   "thumbnailurl": "",
   "version": "0.2.0",
+  "schema_version": 2,
+  "capabilities": ["integration.provider", "ui.page"],
   "preserve": ["state.json", "plugin_state.json"],
   "documentation": "",
   "path": "/nextfind_assistant",
