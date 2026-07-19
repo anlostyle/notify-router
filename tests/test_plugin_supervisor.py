@@ -25,6 +25,18 @@ def write_plugin(directory, version, body=None):
     )
 
 
+def test_worker_migrates_legacy_state_without_preserve_manifest(tmp_path):
+    from notifyhub.plugin_worker import create_worker
+
+    store = Store(tmp_path)
+    directory = store.plugins_dir / "demo"
+    write_plugin(directory, "1.0.0")
+    (directory / "state.json").write_text('{"cursor":42}')
+    create_worker(directory, tmp_path)
+    migrated = tmp_path / "plugin-data" / "demo" / "state.json"
+    assert json.loads(migrated.read_text()) == {"cursor": 42}
+
+
 def worker_version(item):
     transport = httpx.HTTPTransport(uds=str(item.socket))
     with httpx.Client(transport=transport, base_url="http://plugin") as client:

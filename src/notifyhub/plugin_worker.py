@@ -26,7 +26,8 @@ def create_worker(plugin_dir, data_dir):
     plugin_data = data_dir / "plugin-data" / plugin_id
     plugin_data.mkdir(parents=True, exist_ok=True)
     manifest_data = json.loads((plugin_dir / "manifest.json").read_text(encoding="utf-8"))
-    for relative in manifest_data.get("preserve") or []:
+    legacy_state_paths = {"state.json", "plugin_state.json"}
+    for relative in legacy_state_paths | set(manifest_data.get("preserve") or []):
         source = plugin_dir / relative
         destination = plugin_data / relative
         if source.is_file() and not destination.exists():
