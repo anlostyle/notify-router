@@ -6,6 +6,7 @@
   "logo": "",
   "thumbnailurl": "",
   "version": "0.2.0",
+  "preserve": ["state.json", "plugin_state.json"],
   "documentation": "",
   "path": "/nextfind_assistant",
   "configField": [

@@ -6,6 +6,7 @@
   "logo": "",
   "thumbnailurl": "",
   "version": "0.1.0",
+  "preserve": ["state.json"],
   "documentation": "",
   "path": "/ndu_monitor",
   "configField": [

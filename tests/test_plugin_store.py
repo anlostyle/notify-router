@@ -14,12 +14,12 @@ ARCHIVE = "https://plugins.example.com/bundle.zip"
 REPOSITORY = Path(__file__).parents[1]
 
 
-def bundle(version="1.0.0", extra=None):
+def bundle(version="1.0.0", extra=None, preserve=None):
     output = io.BytesIO()
     with zipfile.ZipFile(output, "w") as archive:
         archive.writestr(
             "repo/plugins/demo/manifest.json",
-            json.dumps({"id": "demo", "name": "Demo", "version": version}),
+            json.dumps({"id": "demo", "name": "Demo", "version": version, "preserve": preserve or []}),
         )
         archive.writestr("repo/plugins/demo/__init__.py", "VALUE = 1\n")
         for name, content in extra or []:
@@ -54,13 +54,14 @@ def test_install_and_update_plugin_with_backup(tmp_path, monkeypatch):
     monkeypatch.setattr(
         manager,
         "_fetch_bytes",
-        lambda url, _limit: index(versions["current"]) if url == SOURCE else bundle(versions["current"]),
+        lambda url, _limit: index(versions["current"]) if url == SOURCE else bundle(versions["current"], preserve=["state.json"]),
     )
 
     result = manager.install(SOURCE, "demo")
     assert result["restart_required"] is True
     assert result["backup"] is None
     assert json.loads((store.plugins_dir / "demo" / "manifest.json").read_text())["version"] == "1.0.0"
+    (store.plugins_dir / "demo" / "state.json").write_text('{"cursor":42}')
 
     versions["current"] = "1.1.0"
     catalog = manager.catalog([SOURCE])
@@ -68,6 +69,7 @@ def test_install_and_update_plugin_with_backup(tmp_path, monkeypatch):
     result = manager.install(SOURCE, "demo")
     assert result["backup"]
     assert json.loads((store.plugins_dir / "demo" / "manifest.json").read_text())["version"] == "1.1.0"
+    assert json.loads((store.plugins_dir / "demo" / "state.json").read_text())["cursor"] == 42
     assert (tmp_path / "plugin-backups").is_dir()
 
 

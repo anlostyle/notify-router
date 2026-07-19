@@ -151,6 +151,7 @@ class PluginStore:
                 raise ValueError("安装包缺少合法的 manifest.json") from exc
             if manifest.get("id") != plugin_id or str(manifest.get("version") or "") != str(entry["version"]):
                 raise ValueError("安装包 manifest 与插件源条目不一致")
+            self._preserve_runtime_paths(target, staging, manifest.get("preserve") or [])
             old = self.store.plugins_dir / f".{plugin_id}.old-{time.time_ns()}"
             if target.exists():
                 target.replace(old)
@@ -211,3 +212,27 @@ class PluginStore:
             raise ValueError("插件安装包不是合法的 ZIP 文件") from exc
         if not files:
             raise ValueError("安装包中没有找到插件目录")
+
+    @staticmethod
+    def _preserve_runtime_paths(current, staging, paths):
+        if not isinstance(paths, list) or len(paths) > 20:
+            raise ValueError("manifest preserve 配置无效")
+        for value in paths:
+            relative = PurePosixPath(str(value))
+            if not relative.parts or relative.is_absolute() or ".." in relative.parts or relative.as_posix() == "manifest.json":
+                raise ValueError("manifest preserve 路径无效")
+            source = current.joinpath(*relative.parts)
+            if not source.exists():
+                continue
+            if source.is_symlink() or (source.is_dir() and any(path.is_symlink() for path in source.rglob("*"))):
+                raise ValueError("运行数据不能包含符号链接")
+            destination = staging.joinpath(*relative.parts)
+            if destination.is_dir():
+                shutil.rmtree(destination)
+            elif destination.exists():
+                destination.unlink()
+            destination.parent.mkdir(parents=True, exist_ok=True)
+            if source.is_dir():
+                shutil.copytree(source, destination)
+            else:
+                shutil.copy2(source, destination)
