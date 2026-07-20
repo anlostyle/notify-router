@@ -46,6 +46,11 @@ class FlowLinkPluginConfig:
         return str(self.get("sEncodingAESKey"))
 
     @property
+    def callback_security_enabled(self) -> bool:
+        """Whether Enterprise WeChat encrypted callback mode is configured."""
+        return bool(self.callback_token and self.encoding_aes_key)
+
+    @property
     def flowlink_url(self) -> str:
         return str(self.get("flowlink_url")).rstrip("/")
 

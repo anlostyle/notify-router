@@ -184,13 +184,31 @@ class QywxCallbackHandler:
             raise ValueError("企业微信回调验证失败")
         return value.decode("utf-8")
 
-    def receive(self, encrypted_xml: str, signature: str, timestamp: str, nonce: str) -> str:
-        crypto = self._get_crypto()
-        code, decrypted = crypto.DecryptMsg(encrypted_xml, signature, timestamp, nonce)
-        if code != 0:
-            raise ValueError("企业微信消息解密失败")
-        message = self._parse(decrypted.decode("utf-8"))
+    def receive(
+        self,
+        encrypted_xml: str,
+        signature: str | None = None,
+        timestamp: str | None = None,
+        nonce: str | None = None,
+    ) -> str:
+        crypto = None
+        if config.callback_security_enabled:
+            if not all((signature, timestamp, nonce)):
+                raise ValueError("企业微信加密回调缺少验证参数")
+            crypto = self._get_crypto()
+            code, decrypted = crypto.DecryptMsg(encrypted_xml, signature, timestamp, nonce)
+            if code != 0:
+                raise ValueError("企业微信消息解密失败")
+            xml_data = decrypted.decode("utf-8")
+        else:
+            # The app can be configured in Enterprise WeChat plaintext mode. In
+            # that mode Token/EncodingAESKey are intentionally unused.
+            xml_data = encrypted_xml
+
+        message = self._parse(xml_data)
         threading.Thread(target=process_chat_message, args=(message,), daemon=True).start()
+        if crypto is None:
+            return "success"
         reply = (
             "<xml>"
             f"<ToUserName><![CDATA[{message.from_user}]]></ToUserName>"
@@ -211,6 +229,8 @@ callback_handler = QywxCallbackHandler()
 
 @wx_flowlink_router.get("/chat")
 async def verify_callback(request: Request):
+    if not config.callback_security_enabled:
+        return Response(content="success", media_type="text/plain")
     values = [request.query_params.get(key) for key in ("msg_signature", "timestamp", "nonce", "echostr")]
     if not all(values):
         raise HTTPException(status_code=400, detail="缺少必要的验证参数")
@@ -222,11 +242,17 @@ async def verify_callback(request: Request):
 
 @wx_flowlink_router.post("/chat")
 async def receive_message(request: Request):
+    body = (await request.body()).decode("utf-8")
+    if not config.callback_security_enabled:
+        try:
+            return Response(content=callback_handler.receive(body), media_type="text/plain")
+        except (ValueError, UnicodeDecodeError):
+            return json_500("企业微信明文消息处理失败")
     values = [request.query_params.get(key) for key in ("msg_signature", "timestamp", "nonce")]
     if not all(values):
         raise HTTPException(status_code=400, detail="缺少必要的验证参数")
     try:
-        result = callback_handler.receive((await request.body()).decode("utf-8"), *values)
+        result = callback_handler.receive(body, *values)
         return Response(content=result, media_type="text/plain")
     except ValueError:
         return json_500("企业微信消息处理失败")

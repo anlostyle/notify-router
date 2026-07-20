@@ -3,7 +3,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parents[1]))
 
-from plugins.wx_flowlink_save.app import QywxMessage, extract_share_input, process_chat_message
+from plugins.wx_flowlink_save.app import QywxMessage, callback_handler, extract_share_input, process_chat_message
 from plugins.wx_flowlink_save.api.flowlink_api import FlowLinkApi
 from plugins.wx_flowlink_save.utils import config
 
@@ -82,3 +82,18 @@ def test_success_is_sent_as_news(monkeypatch):
     assert sender.news[0] == "✅ FlowLink 转存整理已启动"
     assert "TMDB" in sender.news[1]
     assert "STRM" in sender.news[1]
+
+
+def test_plaintext_callback_does_not_require_callback_keys(monkeypatch):
+    xml = (
+        "<xml><ToUserName><![CDATA[corp]]></ToUserName>"
+        "<FromUserName><![CDATA[user]]></FromUserName><CreateTime>1</CreateTime>"
+        "<MsgType><![CDATA[text]]></MsgType><Content><![CDATA[https://115.com/s/abc123]]></Content>"
+        "<MsgId>2</MsgId></xml>"
+    )
+    monkeypatch.setattr(config, "_cache", {"sCorpID": "corp"})
+    monkeypatch.setattr(config, "_fetched_at", float("inf"))
+    monkeypatch.setattr("plugins.wx_flowlink_save.app.process_chat_message", lambda *_args: None)
+    monkeypatch.setattr(callback_handler, "_get_crypto", lambda: (_ for _ in ()).throw(AssertionError("must not decrypt")))
+
+    assert callback_handler.receive(xml) == "success"
