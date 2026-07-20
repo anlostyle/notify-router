@@ -9,7 +9,7 @@ from pathlib import Path
 import uvicorn
 from fastapi import FastAPI, HTTPException
 
-from .controller.schedule import start_scheduler, stop_scheduler
+from .controller.schedule import registered_task_ids, start_scheduler, stop_scheduler
 from .controller.server import Server
 from .plugin_loader import PluginLoader
 from .plugins.common import run_after_setup_hooks
@@ -64,6 +64,7 @@ def create_worker(plugin_dir, data_dir):
         if not state["active"] and enabled(os.environ.get("PLUGIN_TASKS_ENABLED", "1")):
             start_scheduler()
             await run_after_setup_hooks(logger)
+            store.prune_plugin_tasks(plugin_id, registered_task_ids())
         state["active"] = True
         return {"status": "ok", "active": True}
 

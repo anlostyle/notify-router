@@ -64,3 +64,21 @@ def test_plugin_cron_registration_appears_in_task_center(tmp_path, monkeypatch):
         assert task["schedule"] == "*/5 * * * *"
     finally:
         schedule_runtime._scheduler.remove_job(job.id)
+
+
+def test_prune_plugin_tasks_removes_stale_registrations(tmp_path):
+    store = Store(tmp_path)
+    store.register_task("nsrss:old", "nsrss", "Old", "scheduled", "0 * * * *")
+    store.register_task("nsrss:current", "nsrss", "Current", "scheduled", "*/5 * * * *")
+    store.prune_plugin_tasks("nsrss", ["nsrss:current"])
+    assert [item["task_id"] for item in store.list_tasks()] == ["nsrss:current"]
+
+
+def test_startup_repairs_legacy_pve_and_watchtower_monitor_labels(tmp_path):
+    store = Store(tmp_path)
+    store.update_monitor("pve", "pve:one", "PVE", "backup", "error", "最近备份状态：pruning datastore successful")
+    store.update_monitor("watchtower", "watchtower:one", "Server A", "container", "healthy", "已接收容器更新检查结果")
+    repaired = Store(tmp_path)
+    rows = {item["provider"]: item for item in repaired.list_monitors()}
+    assert rows["pve"]["status"] == "healthy"
+    assert rows["watchtower"]["name"] == "Watchtower · Server A"

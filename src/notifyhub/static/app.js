@@ -125,16 +125,21 @@ async function showApp(session) {
 }
 
 async function loadCore() {
-  const [status, config, templatePayload, plugins] = await Promise.all([
+  const [status, config, templatePayload, plugins, monitors, tasks] = await Promise.all([
     api('/api/admin/status'), api('/api/admin/config'), api('/api/admin/templates'), api('/api/admin/plugins'),
+    api('/api/admin/monitors'), api('/api/admin/tasks'),
   ])
   state.status = status
   state.config = config
   state.templates = templatePayload.template || []
   state.plugins = plugins || []
+  state.monitors = monitors || { items: [], events: [], summary: {} }
+  state.tasks = tasks || { items: [], runs: [], summary: {} }
   $('#nav-channels').textContent = status.channels
   $('#nav-routes').textContent = status.routes
   $('#nav-plugins').textContent = status.plugins
+  $('#nav-monitors').textContent = state.monitors.summary?.total || 0
+  $('#nav-tasks').textContent = state.tasks.summary?.total || 0
   $('#sidebar-version').textContent = `v${status.version}`
 }
 
@@ -190,7 +195,7 @@ async function renderPage() {
   if (page === 'monitors') {
     $('#page-content').innerHTML = '<div class="skeleton"></div>'
     state.monitors = await api('/api/admin/monitors')
-    $('#nav-monitors').textContent = state.monitors.summary?.attention || state.monitors.summary?.total || 0
+    $('#nav-monitors').textContent = state.monitors.summary?.total || 0
   }
   if (page === 'tasks') {
     $('#page-content').innerHTML = '<div class="skeleton"></div>'

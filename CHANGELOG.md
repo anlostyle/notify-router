@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.6.1 - 2026-07-20
+
+- Load monitoring and task navigation counts during the initial console refresh.
+- Remove stale plugin task registrations after each successful worker activation.
+- Classify descriptive PVE successful statuses correctly and treat unknown states as warnings.
+- Label Watchtower passive reports clearly in the monitoring center.
+
 ## 0.6.0 - 2026-07-19
 
 - Establish notification, monitoring, task, and marketplace domain boundaries.

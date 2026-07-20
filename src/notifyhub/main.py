@@ -231,6 +231,17 @@ def active_route(route_id):
     return route if route and enabled(route.get("active", True)) else None
 
 
+def classify_pve_status(value):
+    normalized = str(value or "").strip().lower()
+    failed_words = ("failed", "failure", "error", "aborted", "timeout")
+    success_words = ("successful", "success", "completed", "complete", " ok", "ok ")
+    if any(word in normalized for word in failed_words):
+        return "error"
+    if normalized == "ok" or any(word in normalized for word in success_words):
+        return "healthy"
+    return "warning"
+
+
 def enqueue_event(route_id, event, template_type, context, message, push_img_url=None, push_link_url=None, fallback_img_url=None):
     route = active_route(route_id)
     if not route:
@@ -400,7 +411,8 @@ async def watchtower_compatible(route_id: str, request: Request):
         f"{LEGACY_COVER_URL}/Watchtower.png",
     )
     entity = "watchtower:" + hashlib.sha256(route_id.encode()).hexdigest()[:12]
-    store.update_monitor("watchtower", entity, str(context.get("server_name") or "Watchtower"), "container", "healthy", "已接收容器更新检查结果")
+    server_name = str(context.get("server_name") or "默认实例")
+    store.update_monitor("watchtower", entity, f"Watchtower · {server_name}", "container", "healthy", "Watchtower 已上报容器镜像检查结果")
     return result
 
 
@@ -433,10 +445,10 @@ async def pve_compatible(route_id: str, request: Request):
         "PVE事件通知已进入发送队列",
         fallback_img_url=f"{LEGACY_COVER_URL}/PVEBackup.png",
     )
-    task_status = str(context.get("task_status") or "").lower()
-    status = "healthy" if task_status in {"ok", "success", "successful"} else "error"
+    task_status = str(context.get("task_status") or "").strip()
+    status = classify_pve_status(task_status)
     entity = "pve-backup:" + hashlib.sha256(route_id.encode()).hexdigest()[:12]
-    store.update_monitor("pve", entity, str(context.get("machine_name") or "PVE 备份"), "backup", status, f"最近备份状态：{task_status or 'unknown'}")
+    store.update_monitor("pve", entity, str(context.get("machine_name") or "PVE 任务"), "backup", status, f"最近任务状态：{task_status or 'unknown'}")
     return result
 
 

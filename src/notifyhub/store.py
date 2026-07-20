@@ -207,6 +207,21 @@ class Store:
                 "UPDATE deliveries SET status='retry', next_attempt_at=? WHERE status='processing'",
                 (time.time(),),
             )
+            db.execute(
+                """UPDATE monitors SET status='healthy'
+                   WHERE provider='pve' AND status='error' AND
+                     (lower(summary) LIKE '%successful%' OR lower(summary) LIKE '% success%' OR lower(summary) LIKE '% ok%')"""
+            )
+            db.execute(
+                """UPDATE platform_events SET status='resolved'
+                   WHERE source='pve' AND status='open' AND entity_key IN
+                     (SELECT entity_key FROM monitors WHERE provider='pve' AND status='healthy')"""
+            )
+            db.execute(
+                """UPDATE monitors SET name='Watchtower · ' || name,
+                     summary='Watchtower 已上报容器镜像检查结果'
+                   WHERE provider='watchtower' AND name NOT LIKE 'Watchtower · %'"""
+            )
         self.db_path.chmod(0o600)
 
     def maintain(self, now=None):
@@ -600,7 +615,9 @@ class Store:
                 (provider, entity_key, name, category, status, redact_secret_text(summary)[:1000], payload, now, now),
             )
         if changed:
-            self.record_event("monitor", provider, "status_changed", entity_key, "error" if status in {"down", "error"} else "info", name, summary, "open" if status in {"down", "error"} else "resolved")
+            unhealthy = status in {"down", "error", "warning"}
+            severity = "error" if status in {"down", "error"} else "warning" if status == "warning" else "info"
+            self.record_event("monitor", provider, "status_changed", entity_key, severity, name, summary, "open" if unhealthy else "resolved")
 
     def list_monitors(self):
         with self.connect() as db:
@@ -624,6 +641,18 @@ class Store:
                      category=excluded.category, schedule=excluded.schedule, enabled=excluded.enabled, updated_at=excluded.updated_at""",
                 (task_id, plugin_id, name, category, schedule, int(bool(enabled_value)), now),
             )
+
+    def prune_plugin_tasks(self, plugin_id, active_task_ids):
+        active = list(dict.fromkeys(active_task_ids or []))
+        with self.connect() as db:
+            if active:
+                placeholders = ",".join("?" for _ in active)
+                db.execute(
+                    f"DELETE FROM platform_tasks WHERE plugin_id=? AND task_id NOT IN ({placeholders})",
+                    (plugin_id, *active),
+                )
+            else:
+                db.execute("DELETE FROM platform_tasks WHERE plugin_id=?", (plugin_id,))
 
     def start_task_run(self, task_id):
         now = localnow()

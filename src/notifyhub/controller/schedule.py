@@ -53,3 +53,7 @@ def start_scheduler():
 def stop_scheduler():
     if _scheduler.running:
         _scheduler.shutdown(wait=False)
+
+
+def registered_task_ids():
+    return [job.id for job in _scheduler.get_jobs()]

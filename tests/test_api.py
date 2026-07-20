@@ -157,3 +157,12 @@ def test_notify_api_keeps_legacy_response_shape(tmp_path, monkeypatch):
         assert image == "https://example.com/custom.png"
         providers = {item["provider"] for item in main.store.list_monitors()}
         assert {"nezha", "watchtower", "pve"} <= providers
+
+
+def test_pve_status_classification():
+    from notifyhub.main import classify_pve_status
+
+    assert classify_pve_status("pruning datastore 'backup' successful") == "healthy"
+    assert classify_pve_status("TASK OK") == "healthy"
+    assert classify_pve_status("backup failed: timeout") == "error"
+    assert classify_pve_status("running") == "warning"

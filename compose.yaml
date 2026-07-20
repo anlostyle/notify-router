@@ -1,6 +1,6 @@
 services:
   notify-router:
-    image: ${NOTIFY_IMAGE:-ghcr.io/anlostyle/notify-router}:${NOTIFY_VERSION:-0.6.0}
+    image: ${NOTIFY_IMAGE:-ghcr.io/anlostyle/notify-router}:${NOTIFY_VERSION:-0.6.1}
     build: .
     container_name: notify-router
     ports:
