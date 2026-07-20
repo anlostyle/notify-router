@@ -60,11 +60,11 @@
     {
       "id": "wx-flowlink-save",
       "name": "115转存-FlowLink",
-      "version": "0.2.0",
+      "version": "0.3.0",
       "description": "使用 FlowLink 快捷方式接口，将 115 分享一键提交到自动转存整理流水线。",
       "author": "Codex",
-      "archive_url": "https://github.com/anlostyle/notify-router/archive/9b4ca37411f4e1719e05e447ddaa1198b3300890.zip",
-      "subdir": "notify-router-9b4ca37411f4e1719e05e447ddaa1198b3300890/plugins/wx_flowlink_save"
+      "archive_url": "https://github.com/anlostyle/notify-router/archive/REPLACE_FLOWLINK_030_COMMIT.zip",
+      "subdir": "notify-router-REPLACE_FLOWLINK_030_COMMIT/plugins/wx_flowlink_save"
     },
     {
       "id": "wx-nullbr",
