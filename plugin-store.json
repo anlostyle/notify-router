@@ -60,11 +60,11 @@
     {
       "id": "wx-flowlink-save",
       "name": "115转存-FlowLink",
-      "version": "0.1.1",
-      "description": "通过企业微信将 115 分享一键提交至 FlowLink，自动转存、识别、重命名、分类并生成 STRM。",
+      "version": "0.2.0",
+      "description": "使用 FlowLink 快捷方式接口，将 115 分享一键提交到自动转存整理流水线。",
       "author": "Codex",
-      "archive_url": "https://github.com/anlostyle/notify-router/archive/41b0536.zip",
-      "subdir": "notify-router-41b0536d6327458fad3af52d49d579a77f041f24/plugins/wx_flowlink_save"
+      "archive_url": "https://github.com/anlostyle/notify-router/archive/refs/heads/master.zip",
+      "subdir": "notify-router-master/plugins/wx_flowlink_save"
     },
     {
       "id": "wx-nullbr",

@@ -22,54 +22,16 @@ class FlowLinkPluginConfig:
         return self._values().get(key, default)
 
     @property
-    def qywx_base_url(self) -> str:
-        return str(self.get("qywx_base_url", "https://qyapi.weixin.qq.com")).rstrip("/")
+    def base_url(self) -> str:
+        return str(self.get("base_url") or self.get("flowlink_url")).rstrip("/")
 
     @property
-    def corp_id(self) -> str:
-        return str(self.get("sCorpID"))
+    def name(self) -> str:
+        return str(self.get("name") or self.get("task_name", "115sub")).strip() or "115sub"
 
     @property
-    def corp_secret(self) -> str:
-        return str(self.get("sCorpsecret"))
-
-    @property
-    def agent_id(self) -> str:
-        return str(self.get("sAgentid"))
-
-    @property
-    def callback_token(self) -> str:
-        return str(self.get("sToken"))
-
-    @property
-    def encoding_aes_key(self) -> str:
-        return str(self.get("sEncodingAESKey"))
-
-    @property
-    def callback_security_enabled(self) -> bool:
-        """Whether Enterprise WeChat encrypted callback mode is configured."""
-        return bool(self.callback_token and self.encoding_aes_key)
-
-    @property
-    def flowlink_url(self) -> str:
-        return str(self.get("flowlink_url")).rstrip("/")
-
-    @property
-    def flowlink_token(self) -> str:
-        return str(self.get("flowlink_token"))
-
-    @property
-    def task_name(self) -> str:
-        return str(self.get("task_name", "115sub")).strip() or "115sub"
-
-    @property
-    def cover_url(self) -> str:
-        return str(
-            self.get(
-                "cover_url",
-                "https://s1.locimg.com/2025/01/03/13a09e2f7cb3a.png",
-            )
-        ).strip()
+    def token(self) -> str:
+        return str(self.get("token") or self.get("flowlink_token"))
 
 
 config = FlowLinkPluginConfig()
