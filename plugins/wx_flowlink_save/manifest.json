@@ -1,0 +1,27 @@
+{
+  "id": "wx-flowlink-save",
+  "name": "115转存-FlowLink",
+  "description": "通过企业微信将 115 分享一键提交至 FlowLink，自动转存、识别、重命名、分类并生成 STRM。",
+  "author": "Codex",
+  "logo": "https://s1.locimg.com/2025/01/03/13a09e2f7cb3a.png",
+  "thumbnailurl": "https://s1.locimg.com/2025/01/03/13a09e2f7cb3a.png",
+  "version": "0.1.0",
+  "schema_version": 2,
+  "capabilities": ["integration.provider", "ui.page"],
+  "documentation": "将企业微信应用的回调地址设为 /api/plugins/wx-flowlink-save/chat。FlowLink 的整理、分类和 STRM 规则由所选任务统一管理。",
+  "path": "/wx-flowlink-save",
+  "configField": [
+    {"fieldName": "qywx_base_url", "fieldType": "string", "label": "企业微信 API 地址", "helpText": "企业微信 API 基础地址", "defaultValue": "https://qyapi.weixin.qq.com"},
+    {"fieldName": "sCorpID", "fieldType": "string", "label": "企业微信 CorpID", "helpText": "企业微信的 CorpID", "defaultValue": ""},
+    {"fieldName": "sCorpsecret", "fieldType": "password", "label": "企业微信 Secret", "helpText": "企业微信应用 Secret", "defaultValue": ""},
+    {"fieldName": "sAgentid", "fieldType": "string", "label": "企业微信 AgentID", "helpText": "企业微信应用 AgentID", "defaultValue": ""},
+    {"fieldName": "sToken", "fieldType": "password", "label": "企业微信回调 Token", "helpText": "企业微信接收消息 Token", "defaultValue": ""},
+    {"fieldName": "sEncodingAESKey", "fieldType": "password", "label": "企业微信 EncodingAESKey", "helpText": "企业微信消息加密密钥", "defaultValue": ""},
+    {"fieldName": "flowlink_url", "fieldType": "string", "label": "FlowLink 服务地址", "helpText": "填写到 FlowLink Web 端口，不要附加 API 路径", "defaultValue": ""},
+    {"fieldName": "flowlink_token", "fieldType": "password", "label": "FlowLink API Token", "helpText": "FlowLink 系统设置中的 API Token", "defaultValue": ""},
+    {"fieldName": "task_name", "fieldType": "string", "label": "FlowLink 转存任务", "helpText": "分享内容将使用该转存整理任务", "defaultValue": "115sub"},
+    {"fieldName": "cover_url", "fieldType": "string", "label": "成功通知封面", "helpText": "企业微信 news 图文消息的封面图", "defaultValue": "https://s1.locimg.com/2025/01/03/13a09e2f7cb3a.png"}
+  ],
+  "helpTextField": [],
+  "frontend_page": {}
+}

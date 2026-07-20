@@ -58,6 +58,15 @@
       "subdir": "notify-router-master/plugins/wx-media302-save"
     },
     {
+      "id": "wx-flowlink-save",
+      "name": "115转存-FlowLink",
+      "version": "0.1.0",
+      "description": "通过企业微信将 115 分享一键提交至 FlowLink，自动转存、识别、重命名、分类并生成 STRM。",
+      "author": "Codex",
+      "archive_url": "https://github.com/anlostyle/notify-router/archive/refs/heads/master.zip",
+      "subdir": "notify-router-master/plugins/wx_flowlink_save"
+    },
+    {
       "id": "wx-nullbr",
       "name": "微信资源搜索",
       "version": "0.0.1",
