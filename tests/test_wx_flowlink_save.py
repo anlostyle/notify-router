@@ -4,6 +4,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parents[1]))
 
 from plugins.wx_flowlink_save.api.flowlink_api import FlowLinkApi
+from plugins.wx_flowlink_save.app import extract_share_url
 from plugins.wx_flowlink_save.utils import config
 
 
@@ -87,9 +88,30 @@ def test_flowlink_shortcut_falls_back_for_legacy_flowlink(monkeypatch):
     }
 
 
-def test_legacy_callback_is_not_used():
+def test_extract_share_url_from_wecom_text():
+    assert (
+        extract_share_url("请转存：https://115cdn.com/s/swsltbm3wwq?password=m2f2。")
+        == "https://115cdn.com/s/swsltbm3wwq?password=m2f2"
+    )
+    assert extract_share_url("没有 115 分享") == ""
+
+
+def test_manifest_contains_shortcut_and_wecom_callback():
     manifest = __import__("json").loads(
         (Path(__file__).parents[1] / "plugins/wx_flowlink_save/manifest.json").read_text()
     )
     assert "shortcut" in manifest["documentation"]
-    assert {field["fieldName"] for field in manifest["configField"]} == {"base_url", "name", "token"}
+    assert "企业微信" in manifest["documentation"]
+    assert {field["fieldName"] for field in manifest["configField"]} == {
+        "base_url",
+        "name",
+        "token",
+        "cover_url",
+        "qywx_base_url",
+        "sCorpID",
+        "sCorpsecret",
+        "sAgentid",
+        "sToken",
+        "sEncodingAESKey",
+    }
+    assert "/api/plugins/wx-flowlink-save/chat" in str(manifest["helpTextField"])

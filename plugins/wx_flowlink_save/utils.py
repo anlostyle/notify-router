@@ -33,5 +33,33 @@ class FlowLinkPluginConfig:
     def token(self) -> str:
         return str(self.get("token") or self.get("flowlink_token"))
 
+    @property
+    def qywx_base_url(self) -> str:
+        return str(self.get("qywx_base_url") or "https://qyapi.weixin.qq.com").rstrip("/")
+
+    @property
+    def sCorpID(self) -> str:
+        return str(self.get("sCorpID") or "").strip()
+
+    @property
+    def sCorpsecret(self) -> str:
+        return str(self.get("sCorpsecret") or "").strip()
+
+    @property
+    def sAgentid(self) -> str:
+        return str(self.get("sAgentid") or "").strip()
+
+    @property
+    def sToken(self) -> str:
+        return str(self.get("sToken") or "").strip()
+
+    @property
+    def sEncodingAESKey(self) -> str:
+        return str(self.get("sEncodingAESKey") or "").strip()
+
+    @property
+    def cover_url(self) -> str:
+        return str(self.get("cover_url") or "").strip()
+
 
 config = FlowLinkPluginConfig()
