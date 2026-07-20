@@ -122,6 +122,9 @@ async function showApp(session) {
   $('#user-avatar').textContent = (session.username || 'A').slice(0, 1).toUpperCase()
   await loadCore()
   await renderPage()
+  if (session.password_change_required || state.status.password_change_required) {
+    setTimeout(() => openPasswordForm(true), 120)
+  }
 }
 
 async function loadCore() {
@@ -338,7 +341,7 @@ function renderLogs() {
 
 function renderSettings() {
   const app = state.config.app || {}
-  return `<div class="settings-grid"><section class="panel"><header class="panel-header"><div><h2>站点设置</h2><p>管理后台的基础信息</p></div><button class="button secondary small" data-action="edit-settings">${icon('edit')}编辑</button></header><div class="panel-body settings-list"><div class="info-row"><span>应用名称</span><strong>${escapeHtml(app.app_name || 'Notify')}</strong></div><div class="info-row"><span>站点地址</span><strong>${escapeHtml(app.site_url || location.origin)}</strong></div><div class="info-row"><span>记录保留</span><strong>${escapeHtml(app.record_retention_days || 90)} 天</strong></div><div class="info-row"><span>GitHub Token</span><code class="code">${escapeHtml(app.github_token || '未配置')}</code></div></div></section><section class="panel"><header class="panel-header"><div><h2>运行信息</h2><p>当前实例状态</p></div><span class="status-badge active">正常</span></header><div class="panel-body settings-list"><div class="info-row"><span>系统版本</span><code class="code">v${escapeHtml(state.status.version)}</code></div><div class="info-row"><span>通知渠道</span><strong>${state.status.channels}</strong></div><div class="info-row"><span>通知通道</span><strong>${state.status.routes}</strong></div><div class="info-row"><span>插件任务</span><span class="status-badge ${state.status.plugin_tasks ? 'active' : 'inactive'}">${state.status.plugin_tasks ? '运行中' : '已暂停'}</span></div><div class="info-row"><span>API 文档</span><a class="code" href="/docs" target="_blank" rel="noopener">/docs</a></div></div></section></div>`
+  return `<div class="settings-grid"><section class="panel"><header class="panel-header"><div><h2>站点设置</h2><p>管理后台的基础信息</p></div><button class="button secondary small" data-action="edit-settings">${icon('edit')}编辑</button></header><div class="panel-body settings-list"><div class="info-row"><span>应用名称</span><strong>${escapeHtml(app.app_name || 'Notify')}</strong></div><div class="info-row"><span>站点地址</span><strong>${escapeHtml(app.site_url || location.origin)}</strong></div><div class="info-row"><span>记录保留</span><strong>${escapeHtml(app.record_retention_days || 90)} 天</strong></div><div class="info-row"><span>GitHub Token</span><code class="code">${escapeHtml(app.github_token || '未配置')}</code></div></div></section><section class="panel"><header class="panel-header"><div><h2>管理员安全</h2><p>修改管理后台登录密码</p></div><button class="button secondary small" data-action="change-password">${icon('settings')}修改密码</button></header><div class="panel-body settings-list"><div class="info-row"><span>当前账户</span><strong>${escapeHtml(state.session?.username || 'admin')}</strong></div><div class="info-row"><span>密码状态</span><span class="status-badge ${state.status.password_change_required ? 'pending' : 'active'}">${state.status.password_change_required ? '需要修改' : '已设置'}</span></div><p class="form-note">密码会保存到数据目录，修改后立即生效，并使其他登录会话失效。</p></div></section><section class="panel"><header class="panel-header"><div><h2>运行信息</h2><p>当前实例状态</p></div><span class="status-badge active">正常</span></header><div class="panel-body settings-list"><div class="info-row"><span>系统版本</span><code class="code">v${escapeHtml(state.status.version)}</code></div><div class="info-row"><span>通知渠道</span><strong>${state.status.channels}</strong></div><div class="info-row"><span>通知通道</span><strong>${state.status.routes}</strong></div><div class="info-row"><span>插件任务</span><span class="status-badge ${state.status.plugin_tasks ? 'active' : 'inactive'}">${state.status.plugin_tasks ? '运行中' : '已暂停'}</span></div><div class="info-row"><span>API 文档</span><a class="code" href="/docs" target="_blank" rel="noopener">/docs</a></div></div></section></div>`
 }
 
 function emptyState(iconName, title, description) {
@@ -580,6 +583,32 @@ async function openPluginForm(plugin) {
   })
 }
 
+function passwordField(name, label, autocomplete) {
+  return `<label class="field"><span>${escapeHtml(label)}</span><input name="${escapeHtml(name)}" type="password" autocomplete="${escapeHtml(autocomplete)}" required></label>`
+}
+
+function openPasswordForm(firstLogin = false) {
+  openModal({
+    eyebrow: '管理员安全',
+    title: firstLogin ? '请先修改默认密码' : '修改管理员密码',
+    submitText: '更新密码',
+    body: `${firstLogin ? '<div class="form-note">当前使用的是默认密码。为保护你的通知配置，请先设置一个新的管理员密码。</div>' : ''}${passwordField('current_password', '当前密码', 'current-password')}${passwordField('new_password', '新密码', 'new-password')}${passwordField('confirm_password', '确认新密码', 'new-password')}<p class="form-note">新密码至少需要 8 个字符。更新后当前及其他登录会话都会失效。</p>`,
+    onSubmit: async form => {
+      const data = new FormData(form)
+      const currentPassword = String(data.get('current_password') || '')
+      const newPassword = String(data.get('new_password') || '')
+      const confirmPassword = String(data.get('confirm_password') || '')
+      if (!currentPassword || !newPassword || !confirmPassword) throw new Error('请完整填写密码')
+      if (newPassword !== confirmPassword) throw new Error('两次输入的新密码不一致')
+      await api('/api/admin/password', { method: 'POST', body: JSON.stringify({ current_password: currentPassword, new_password: newPassword, confirm_password: confirmPassword }) })
+      closeModal()
+      await api('/api/admin/logout', { method: 'POST' })
+      $('#login-error').textContent = '密码已更新，请使用新密码登录'
+      showLogin()
+    },
+  })
+}
+
 function openSettingsForm() {
   const app = state.config.app || {}
   openModal({
@@ -733,6 +762,7 @@ async function handleAction(action, target) {
   }
   if (action === 'edit-plugin') return openPluginForm(state.plugins.find(item => item.id === target.dataset.id))
   if (action === 'open-plugin') return window.open(`/api/plugins/${encodeURIComponent(target.dataset.id)}/frontend/`, '_blank', 'noopener')
+  if (action === 'change-password') return openPasswordForm()
   if (action === 'retry-delivery') {
     await api(`/api/admin/deliveries/${target.dataset.id}/retry`, { method: 'POST' })
     toast('已重新加入发送队列')

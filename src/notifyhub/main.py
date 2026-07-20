@@ -4,6 +4,7 @@ import hmac
 import json
 import logging
 import os
+import secrets
 import signal
 import threading
 import time
@@ -68,12 +69,16 @@ security = HTTPBasic(auto_error=False)
 SESSION_COOKIE = "notify_session"
 LOGIN_FAILURES = deque(maxlen=1000)
 LOGIN_LOCK = threading.Lock()
+DEFAULT_ADMIN_USER = "admin"
+DEFAULT_ADMIN_PASSWORD = "password"
+PASSWORD_HASH_ITERATIONS = 310_000
+SECURITY_LOCK = threading.RLock()
 
 
 @asynccontextmanager
 async def lifespan(_app):
-    if not os.environ.get("NH_PASSWORD") or os.environ.get("NH_PASSWORD") == "change-me":
-        logger.warning("NH_PASSWORD is missing or still uses the example value")
+    if not os.environ.get("NH_PASSWORD") or os.environ.get("NH_PASSWORD") in {DEFAULT_ADMIN_PASSWORD, "change-me"}:
+        logger.warning("NH_PASSWORD is missing or still uses the default value; change it in the management console")
     if not os.environ.get("SESSION_SECRET"):
         logger.warning("SESSION_SECRET is unset; session signing falls back to NH_PASSWORD")
     worker.start()
@@ -108,6 +113,12 @@ class LoginRequest(BaseModel):
     password: str
 
 
+class PasswordChangeRequest(BaseModel):
+    current_password: str
+    new_password: str
+    confirm_password: str
+
+
 class TestNotification(BaseModel):
     title: str = "Notify 测试通知"
     content: str = "通知渠道连接正常。"
@@ -130,10 +141,103 @@ def api_auth(authorization: str | None = Header(default=None)):
         raise HTTPException(401, "invalid API token")
 
 
+def _security_path():
+    return store.conf_dir / "security.json"
+
+
+def _read_security():
+    path = _security_path()
+    with SECURITY_LOCK:
+        try:
+            value = json.loads(path.read_text(encoding="utf-8"))
+        except (FileNotFoundError, OSError, json.JSONDecodeError):
+            return {}
+        return value if isinstance(value, dict) else {}
+
+
+def _save_security(value):
+    path = _security_path()
+    path.parent.mkdir(parents=True, exist_ok=True)
+    temporary = path.with_name(f".{path.name}.tmp")
+    with SECURITY_LOCK:
+        try:
+            temporary.write_text(json.dumps(value, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+            temporary.chmod(0o600)
+            os.replace(temporary, path)
+            path.chmod(0o600)
+        finally:
+            temporary.unlink(missing_ok=True)
+
+
+def _hash_password(password):
+    salt = secrets.token_bytes(16)
+    digest = hashlib.pbkdf2_hmac("sha256", password.encode("utf-8"), salt, PASSWORD_HASH_ITERATIONS)
+    return f"pbkdf2_sha256${PASSWORD_HASH_ITERATIONS}${salt.hex()}${digest.hex()}"
+
+
+def _verify_password(password, encoded):
+    try:
+        algorithm, iterations, salt_hex, digest_hex = str(encoded).split("$", 3)
+        if algorithm != "pbkdf2_sha256":
+            return False
+        iterations = int(iterations)
+        if not 10_000 <= iterations <= 1_000_000:
+            return False
+        salt = bytes.fromhex(salt_hex)
+        expected = bytes.fromhex(digest_hex)
+        actual = hashlib.pbkdf2_hmac("sha256", password.encode("utf-8"), salt, iterations)
+        return hmac.compare_digest(actual, expected)
+    except (TypeError, ValueError):
+        return False
+
+
+def _admin_user():
+    return os.environ.get("NH_USER") or DEFAULT_ADMIN_USER
+
+
+def _admin_password():
+    return os.environ.get("NH_PASSWORD") or DEFAULT_ADMIN_PASSWORD
+
+
+def _password_change_required():
+    security_data = _read_security()
+    if security_data.get("password_hash"):
+        return False
+    return _admin_password() in {DEFAULT_ADMIN_PASSWORD, "change-me"}
+
+
+def _session_version():
+    try:
+        return max(0, int(_read_security().get("session_version", 0)))
+    except (TypeError, ValueError):
+        return 0
+
+
+def _session_signing_key():
+    configured = os.environ.get("SESSION_SECRET", "").strip()
+    if configured:
+        return configured
+    persisted = str(_read_security().get("session_secret") or "").strip()
+    return persisted or _admin_password()
+
+
+def _persist_admin_password(password):
+    security_data = _read_security()
+    security_data["password_hash"] = _hash_password(password)
+    security_data["password_changed_at"] = int(time.time())
+    security_data["session_version"] = _session_version() + 1
+    if not os.environ.get("SESSION_SECRET") and not security_data.get("session_secret"):
+        security_data["session_secret"] = secrets.token_hex(32)
+    _save_security(security_data)
+
+
 def _valid_admin(username, password):
-    expected_user = os.environ.get("NH_USER", "admin")
-    expected_password = os.environ.get("NH_PASSWORD", "")
-    return hmac.compare_digest(username or "", expected_user) and hmac.compare_digest(password or "", expected_password)
+    if not hmac.compare_digest(username or "", _admin_user()):
+        return False
+    persisted_hash = _read_security().get("password_hash")
+    if persisted_hash:
+        return _verify_password(password or "", persisted_hash)
+    return hmac.compare_digest(password or "", _admin_password())
 
 
 def _login_blocked(client):
@@ -159,8 +263,8 @@ def _login_succeeded(client):
 
 def _session_token(username, expires=None):
     expires = expires or int(time.time()) + 86400 * 30
-    payload = urlsafe_b64encode(f"{username}:{expires}".encode()).decode().rstrip("=")
-    key = os.environ.get("SESSION_SECRET") or os.environ.get("NH_PASSWORD", "")
+    payload = urlsafe_b64encode(f"{username}:{expires}:{_session_version()}".encode()).decode().rstrip("=")
+    key = _session_signing_key()
     signature = hmac.new(key.encode(), payload.encode(), "sha256").hexdigest()
     return f"{payload}.{signature}"
 
@@ -168,14 +272,22 @@ def _session_token(username, expires=None):
 def _valid_session(token):
     try:
         payload, signature = token.split(".", 1)
-        key = os.environ.get("SESSION_SECRET") or os.environ.get("NH_PASSWORD", "")
+        key = _session_signing_key()
         expected = hmac.new(key.encode(), payload.encode(), "sha256").hexdigest()
         if not key or not hmac.compare_digest(signature, expected):
             return False
         raw = urlsafe_b64decode(payload + "=" * (-len(payload) % 4)).decode()
-        username, expires = raw.rsplit(":", 1)
-        return username == os.environ.get("NH_USER", "admin") and int(expires) > time.time()
-    except (AttributeError, ValueError, TypeError):
+        parts = raw.rsplit(":", 2)
+        if len(parts) == 3:
+            username, expires, version = parts
+            if int(version) != _session_version():
+                return False
+        else:
+            username, expires = raw.rsplit(":", 1)
+            if _session_version() != 0:
+                return False
+        return username == _admin_user() and int(expires) > time.time()
+    except (AttributeError, ValueError, TypeError, OverflowError):
         return False
 
 
@@ -286,7 +398,11 @@ def admin_login(payload: LoginRequest, response: Response, request: Request):
         samesite="lax",
         secure=enabled(os.environ.get("COOKIE_SECURE", "0")),
     )
-    return {"authenticated": True, "username": payload.username}
+    return {
+        "authenticated": True,
+        "username": payload.username,
+        "password_change_required": _password_change_required(),
+    }
 
 
 @app.post("/api/admin/logout")
@@ -297,7 +413,31 @@ def admin_logout(response: Response):
 
 @app.get("/api/admin/session")
 def admin_session(notify_session: str | None = Cookie(default=None)):
-    return {"authenticated": _valid_session(notify_session), "username": os.environ.get("NH_USER", "admin")}
+    return {
+        "authenticated": _valid_session(notify_session),
+        "username": _admin_user(),
+        "password_change_required": _password_change_required(),
+    }
+
+
+@app.post("/api/admin/password", dependencies=[Depends(admin_auth)])
+def change_admin_password(payload: PasswordChangeRequest):
+    if not _valid_admin(_admin_user(), payload.current_password):
+        raise HTTPException(400, "当前密码错误")
+    if len(payload.new_password) < 8:
+        raise HTTPException(400, "新密码至少需要 8 个字符")
+    if payload.new_password != payload.confirm_password:
+        raise HTTPException(400, "两次输入的新密码不一致")
+    if hmac.compare_digest(payload.current_password, payload.new_password):
+        raise HTTPException(400, "新密码不能与当前密码相同")
+    _persist_admin_password(payload.new_password)
+    LOGIN_FAILURES.clear()
+    return {
+        "code": 0,
+        "message": "管理员密码已更新",
+        "password_change_required": False,
+        "session_invalidated": True,
+    }
 
 
 @app.post("/api/service/notify", dependencies=[Depends(api_auth)])
@@ -461,6 +601,7 @@ def admin_status():
         "plugins": len(_all_plugin_manifests()),
         "plugin_tasks": enabled(os.environ.get("PLUGIN_TASKS_ENABLED", "1")),
         "admin_restart": enabled(os.environ.get("ADMIN_RESTART_ENABLED", "0")),
+        "password_change_required": _password_change_required(),
         "stats": store.dashboard_stats(),
         "deliveries": store.delivery_status(25),
     }

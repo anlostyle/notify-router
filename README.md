@@ -14,11 +14,16 @@ Requirements: Docker Engine with Docker Compose v2.
 
 ```bash
 cp .env.example .env
-openssl rand -hex 32
 ```
 
-Edit `.env`, replace `NH_PASSWORD`, and paste the generated value into
-`SESSION_SECRET`. Then start the pinned release:
+The first login is `admin / password`. Change it immediately from
+“系统设置 → 修改密码”; the new password is stored in the persistent `data/conf`
+directory and takes effect without restarting the container. For a fully
+automated deployment, set `NH_PASSWORD` to another value before starting.
+`SESSION_SECRET` is optional; when omitted, Notify creates a persistent signing
+secret after the first password change.
+
+Then start the pinned release:
 
 ```bash
 docker compose pull
@@ -38,8 +43,9 @@ docker compose up -d --build
 
 ## Configuration and security
 
-- `NH_USER` and `NH_PASSWORD` protect the management console.
-- `SESSION_SECRET` signs administrator sessions and must be a separate random value.
+- `NH_USER` and `NH_PASSWORD` provide the initial management-console credentials.
+- After a password change, the hashed password and (when needed) session signing
+  secret are stored under `data/conf/security.json` with mode `0600`.
 - `NOTIFY_API_TOKEN` optionally protects notification endpoints with
   `Authorization: Bearer <token>`. Leave it empty only for legacy callers that
   cannot add headers.

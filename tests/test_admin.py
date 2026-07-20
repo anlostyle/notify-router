@@ -75,3 +75,33 @@ def test_admin_login_is_rate_limited(tmp_path, monkeypatch):
     assert response.status_code == 429
     assert response.headers["retry-after"] == "300"
     main.LOGIN_FAILURES.clear()
+
+
+def test_default_password_can_be_changed_without_restart(tmp_path, monkeypatch):
+    monkeypatch.setenv("WORKDIR", str(tmp_path))
+    monkeypatch.delenv("NH_PASSWORD", raising=False)
+    monkeypatch.delenv("SESSION_SECRET", raising=False)
+    main = importlib.import_module("notifyhub.main")
+    monkeypatch.setattr(main, "store", Store(tmp_path))
+    client = TestClient(main.app)
+    try:
+        response = client.post("/api/admin/login", json={"username": "admin", "password": "password"})
+        assert response.status_code == 200
+        assert response.json()["password_change_required"] is True
+        response = client.post(
+            "/api/admin/password",
+            json={
+                "current_password": "password",
+                "new_password": "correct horse battery",
+                "confirm_password": "correct horse battery",
+            },
+        )
+        assert response.status_code == 200
+        assert client.get("/api/admin/config").status_code == 401
+        assert client.post("/api/admin/login", json={"username": "admin", "password": "password"}).status_code == 401
+        response = client.post("/api/admin/login", json={"username": "admin", "password": "correct horse battery"})
+        assert response.status_code == 200
+        assert response.json()["password_change_required"] is False
+        assert (tmp_path / "conf" / "security.json").stat().st_mode & 0o777 == 0o600
+    finally:
+        client.close()

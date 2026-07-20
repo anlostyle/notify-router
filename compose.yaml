@@ -1,6 +1,6 @@
 services:
   notify-router:
-    image: ${NOTIFY_IMAGE:-ghcr.io/anlostyle/notify-router}:${NOTIFY_VERSION:-0.6.1}
+    image: ${NOTIFY_IMAGE:-anlostyle/notify-router}:${NOTIFY_VERSION:-0.6.2}
     build: .
     container_name: notify-router
     ports:
@@ -10,8 +10,8 @@ services:
     environment:
       WORKDIR: /data
       NH_USER: ${NH_USER:-admin}
-      NH_PASSWORD: ${NH_PASSWORD:?Set NH_PASSWORD in .env}
-      SESSION_SECRET: ${SESSION_SECRET:?Set SESSION_SECRET in .env}
+      NH_PASSWORD: ${NH_PASSWORD:-password}
+      SESSION_SECRET: ${SESSION_SECRET:-}
       NOTIFY_API_TOKEN: ${NOTIFY_API_TOKEN:-}
       COOKIE_SECURE: ${COOKIE_SECURE:-0}
       ACCESS_LOG: ${ACCESS_LOG:-0}
