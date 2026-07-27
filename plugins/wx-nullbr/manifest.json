@@ -103,6 +103,10 @@
             "defaultValue": "转存监控"
         }
     ],
-    "helpTextField": [],
+    "helpTextField": [
+        {"fieldType": "title", "value": "企业微信回调地址"},
+        {"fieldType": "code", "value": "{site_url}/api/plugins/wx-nullbr/chat"},
+        {"fieldType": "text", "value": "在企业微信应用中配置接收消息，验证 URL 和接收消息都使用上面的地址。"}
+    ],
     "frontend_page": {}
 }

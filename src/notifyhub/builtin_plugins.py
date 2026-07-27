@@ -37,6 +37,11 @@ MANIFESTS = [
                 ("sEncodingAESKey", "string", "企业微信EncodingAESKey", ""),
             )
         ],
+        "helpTextField": [
+            {"fieldType": "title", "value": "企业微信回调地址"},
+            {"fieldType": "code", "value": "{site_url}/api/plugins/chatbot/chat"},
+            {"fieldType": "text", "value": "在企业微信应用中配置接收消息，验证 URL 和接收消息都使用上面的地址。"},
+        ],
     },
     {
         "id": "qywx_receive",
@@ -48,6 +53,11 @@ MANIFESTS = [
             {"fieldName": "corpid", "fieldType": "string", "label": "CorpID", "defaultValue": ""},
             {"fieldName": "token", "fieldType": "string", "label": "Token", "defaultValue": ""},
             {"fieldName": "encodingAesKey", "fieldType": "string", "label": "EncodingAESKey", "defaultValue": ""},
+        ],
+        "helpTextField": [
+            {"fieldType": "title", "value": "企业微信回调地址"},
+            {"fieldType": "code", "value": "{site_url}/api/plugins/qywx_receive/verify"},
+            {"fieldType": "text", "value": "在企业微信应用中配置服务器 URL，使用上面的地址完成回调验证。"},
         ],
     },
 ]

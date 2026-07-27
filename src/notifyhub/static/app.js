@@ -43,6 +43,9 @@ const state = {
   templates: [],
   plugins: [],
   pluginStore: { sources: [], plugins: [] },
+  pluginStoreLoading: false,
+  pluginStoreError: '',
+  pluginStoreRequest: 0,
   monitors: { items: [], events: [], summary: {} },
   tasks: { items: [], runs: [], summary: {} },
   deliveries: [],
@@ -205,8 +208,9 @@ async function renderPage() {
     }, 5000)
   }
   if (page === 'plugins') {
-    $('#page-content').innerHTML = '<div class="skeleton"></div>'
-    state.pluginStore = await api('/api/admin/plugin-store')
+    state.pluginStoreLoading = true
+    state.pluginStoreError = ''
+    loadPluginStore()
   }
   if (page === 'monitors') {
     $('#page-content').innerHTML = '<div class="skeleton"></div>'
@@ -326,7 +330,7 @@ function renderPlugins() {
   const sources = state.pluginStore.sources || []
   const sourceSummary = sources.length
     ? sources.map(source => `<span class="tag ${source.status === 'error' ? 'danger' : ''}" title="${escapeHtml(source.error || source.url)}">${escapeHtml(source.name)} · ${source.status === 'ok' ? '正常' : '异常'}</span>`).join(' ')
-    : '<span class="form-note">还没有插件源，点击右上角“插件源”添加地址。</span>'
+    : state.pluginStoreLoading ? '<span class="form-note">正在加载插件源…</span>' : '<span class="form-note">还没有插件源，点击右上角“插件源”添加地址。</span>'
   const installedCards = plugins.length ? `<div class="entity-grid">${plugins.map(plugin => `
     <article class="entity-card"><div class="entity-head"><span class="entity-icon">${icon('plug')}</span><div class="entity-title"><h3>${escapeHtml(plugin.name || plugin.id)}</h3><p>${escapeHtml(plugin.id)} · v${escapeHtml(plugin.version || '—')}</p></div><span class="status-badge active">已加载</span></div><div class="entity-body"><p>${escapeHtml(plugin.description || '暂无插件说明')}</p><div>${(plugin.capabilities || []).map(value => `<span class="tag purple">${escapeHtml(value)}</span>`).join(' ')}</div></div><div class="entity-actions">${plugin.has_frontend ? `<button class="button secondary small" data-action="open-plugin" data-id="${escapeHtml(plugin.id)}">打开页面</button>` : ''}<span class="spacer"></span><button class="button secondary small" data-action="edit-plugin" data-id="${escapeHtml(plugin.id)}">${icon('settings')}配置</button></div></article>`).join('')}</div>`
     : '<div class="empty-state"><p>当前没有已加载的可选插件</p></div>'
@@ -334,8 +338,24 @@ function renderPlugins() {
     const action = plugin.update_available ? 'update-plugin' : plugin.installed ? '' : 'install-plugin'
     const label = plugin.update_available ? `更新到 v${plugin.version}` : plugin.installed ? '已是最新版' : '安装'
     return `<article class="entity-card"><div class="entity-head"><span class="entity-icon">${icon('plug')}</span><div class="entity-title"><h3>${escapeHtml(plugin.name || plugin.id)}</h3><p>${escapeHtml(plugin.author || '第三方开发者')} · v${escapeHtml(plugin.version)}</p></div><span class="status-badge ${plugin.installed ? 'active' : 'pending'}">${plugin.update_available ? '可更新' : plugin.installed ? '已安装' : '未安装'}</span></div><div class="entity-body"><p>${escapeHtml(plugin.description || '暂无插件说明')}</p>${plugin.installed_version ? `<small>本地版本 v${escapeHtml(plugin.installed_version)}</small>` : ''}</div><div class="entity-actions">${action ? `<button class="button primary small" data-action="${action}" data-id="${escapeHtml(plugin.id)}" data-source="${escapeHtml(plugin.source_url)}">${label}</button>` : `<button class="button secondary small" disabled>${label}</button>`}<span class="spacer"></span>${plugin.installed ? `<button class="button danger small" data-action="uninstall-plugin" data-id="${escapeHtml(plugin.id)}">卸载</button>` : ''}</div></article>`
-  }).join('')}</div>` : emptyState('plug', sources.length ? '插件源中没有匹配的插件' : '添加插件源后浏览插件库', sources.length ? '请检查插件源或尝试其他关键词' : '插件源是一个公开的 JSON 索引地址')
-  return `<div class="toolbar">${sourceSummary}</div><section class="panel"><header class="panel-header"><div><h2>插件商店</h2><p>在线安装和更新插件；单插件热切换，失败自动回滚</p></div><span class="tag purple">${catalog.length} 个插件</span></header><div class="panel-body">${storeCards}</div></section><section class="panel" style="margin-top:18px"><header class="panel-header"><div><h2>已加载插件</h2><p>由独立 Worker 运行的插件</p></div><span class="tag">${plugins.length} 个</span></header><div class="panel-body">${installedCards}</div></section>`
+  }).join('')}</div>` : state.pluginStoreLoading ? emptyState('plug', '正在加载插件商店', '已加载插件会先显示，插件库稍后自动刷新') : state.pluginStoreError ? emptyState('plug', '插件商店加载失败', state.pluginStoreError) : emptyState('plug', sources.length ? '插件源中没有匹配的插件' : '添加插件源后浏览插件库', sources.length ? '请检查插件源或尝试其他关键词' : '插件源是一个公开的 JSON 索引地址')
+  const storeStatus = state.pluginStoreLoading ? '<span class="tag">正在刷新</span>' : state.pluginStoreError ? '<span class="tag danger">加载失败</span>' : `<span class="tag purple">${catalog.length} 个插件</span>`
+  return `<div class="toolbar">${sourceSummary}</div><section class="panel"><header class="panel-header"><div><h2>插件商店</h2><p>在线安装和更新插件；单插件热切换，失败自动回滚</p></div>${storeStatus}</header><div class="panel-body">${storeCards}</div></section><section class="panel" style="margin-top:18px"><header class="panel-header"><div><h2>已加载插件</h2><p>由独立 Worker 运行的插件</p></div><span class="tag">${plugins.length} 个</span></header><div class="panel-body">${installedCards}</div></section>`
+}
+
+function loadPluginStore() {
+  const request = ++state.pluginStoreRequest
+  api('/api/admin/plugin-store').then(payload => {
+    if (request !== state.pluginStoreRequest || currentPage() !== 'plugins') return
+    state.pluginStore = payload || { sources: [], plugins: [] }
+    state.pluginStoreLoading = false
+    renderCurrent()
+  }).catch(error => {
+    if (request !== state.pluginStoreRequest || currentPage() !== 'plugins') return
+    state.pluginStoreLoading = false
+    state.pluginStoreError = error.message || '无法加载插件商店'
+    renderCurrent()
+  })
 }
 
 function renderDeliveries() {
@@ -551,6 +571,18 @@ function pluginField(field, value) {
   return formField(`plugin_${name}`, field.label || name, type, Array.isArray(value) ? value.join(',') : value ?? field.defaultValue ?? '', '', field.helpText || '')
 }
 
+function pluginHelp(plugin) {
+  const fields = plugin.helpTextField || []
+  if (!fields.length) return ''
+  const siteUrl = String(state.config?.app?.site_url || location.origin).replace(/\/+$/, '')
+  return `<div class="form-section">${fields.map(field => {
+    const value = String(field.value || '').replaceAll('{site_url}', siteUrl)
+    if (field.fieldType === 'title') return `<h3 class="form-section-title">${escapeHtml(value)}</h3>`
+    if (field.fieldType === 'code') return `<div class="form-note"><strong>企业微信回调 URL</strong><code class="code" style="display:block;margin-top:8px;overflow-wrap:anywhere">${escapeHtml(value)}</code></div>`
+    return `<p class="form-note">${escapeHtml(value)}</p>`
+  }).join('')}</div>`
+}
+
 function openPluginSources() {
   const sources = (state.config.app?.plugin_sources || []).join('\n')
   openModal({
@@ -571,7 +603,7 @@ function openPluginSources() {
 async function openPluginForm(plugin) {
   const config = await api(`/api/admin/plugins/${encodeURIComponent(plugin.id)}/config`)
   const fields = plugin.configField || []
-  const body = fields.length ? fields.map(field => pluginField(field, config[field.fieldName])).join('') : '<p class="form-note">这个插件没有通用配置项，请使用插件自己的页面完成操作。</p>'
+  const body = `${pluginHelp(plugin)}${fields.length ? fields.map(field => pluginField(field, config[field.fieldName])).join('') : '<p class="form-note">这个插件没有通用配置项，请使用插件自己的页面完成操作。</p>'}`
   openModal({
     eyebrow: '插件设置', title: plugin.name || plugin.id, body,
     noSubmit: !fields.length,
