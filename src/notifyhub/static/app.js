@@ -96,6 +96,19 @@ async function api(path, options = {}) {
   return data
 }
 
+async function copyText(value) {
+  if (navigator.clipboard?.writeText) return navigator.clipboard.writeText(value)
+  const field = document.createElement('textarea')
+  field.value = value
+  field.style.position = 'fixed'
+  field.style.opacity = '0'
+  document.body.append(field)
+  field.select()
+  const copied = document.execCommand('copy')
+  field.remove()
+  if (!copied) throw new Error('当前浏览器不支持自动复制，请手动复制接口地址')
+}
+
 function setTheme(theme) {
   document.documentElement.dataset.theme = theme
   localStorage.setItem('notify-theme', theme)
@@ -733,7 +746,7 @@ async function handleAction(action, target) {
   }
   if (action === 'copy-route') {
     const base = (state.config.app?.site_url || location.origin).replace(/\/$/, '')
-    await navigator.clipboard.writeText(`${base}/api/service/notify?route_id=${encodeURIComponent(target.dataset.id)}&title={title}&content={content}`)
+    await copyText(`${base}/api/service/notify?route_id=${encodeURIComponent(target.dataset.id)}&title={title}&content={content}`)
     return toast('调用地址已复制')
   }
   if (action === 'add-template') return openTemplateForm()
