@@ -507,7 +507,9 @@ async def emby_compatible(route_id: str, request: Request):
         return notify_error(f"未找到或未激活的通道: {route_id}")
     try:
         payload = await request.json()
-        event, template_type, context = parse_emby(payload)
+        payload_data = payload if isinstance(payload, dict) else {}
+        emby_url = str(request.query_params.get("emby_url") or payload_data.get("emby_url") or "").rstrip("/")
+        event, template_type, context = parse_emby(payload, emby_url=emby_url)
     except (ValueError, TypeError) as exc:
         return notify_error(str(exc))
     item = payload.get("Item") or {}
@@ -517,6 +519,7 @@ async def emby_compatible(route_id: str, request: Request):
     push_img_url = payload.get("push_img_url")
     if not push_img_url and image_id and emby_url.startswith(("http://", "https://")):
         push_img_url = f"{emby_url}/emby/Items/{quote(str(image_id), safe='')}/Images/Primary"
+    push_link_url = payload.get("push_link_url") or context.get("item_url") or context.get("server_url")
     return enqueue_event(
         route_id,
         event,
@@ -524,7 +527,7 @@ async def emby_compatible(route_id: str, request: Request):
         context,
         "Emby事件通知已进入发送队列",
         push_img_url,
-        payload.get("push_link_url"),
+        push_link_url,
         f"{LEGACY_COVER_URL}/EmbyNotify.png",
     )
 

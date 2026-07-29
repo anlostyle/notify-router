@@ -8,6 +8,7 @@ import threading
 import time
 import uuid
 from datetime import date, datetime, timedelta
+from importlib.resources import files
 from pathlib import Path
 from zoneinfo import ZoneInfo
 
@@ -15,6 +16,16 @@ from jinja2.sandbox import SandboxedEnvironment
 
 
 _jinja = SandboxedEnvironment(autoescape=False)
+
+
+def default_templates():
+    try:
+        raw = files("notifyhub").joinpath("emby_templates.json").read_text(encoding="utf-8")
+        value = json.loads(raw)
+        templates = value.get("template", [])
+        return templates if isinstance(templates, list) else []
+    except (FileNotFoundError, OSError, json.JSONDecodeError):
+        return []
 
 
 def redact_secret_text(value):
@@ -70,7 +81,10 @@ class Store:
                 encoding="utf-8",
             )
         if not self.templates_path.exists():
-            self.templates_path.write_text('{"template": []}\n', encoding="utf-8")
+            self.templates_path.write_text(
+                json.dumps({"template": default_templates()}, ensure_ascii=False, indent=2) + "\n",
+                encoding="utf-8",
+            )
         self.config_path.chmod(0o600)
         self.templates_path.chmod(0o600)
 

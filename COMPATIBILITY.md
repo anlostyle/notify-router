@@ -38,3 +38,21 @@ The generic `/api/service/notify` endpoint accepts `route_id`, `title`, `content
 - Built-in enterprise WeChat callbacks: `/api/plugins/chatbot/chat` and `/api/plugins/qywx_receive/verify`
 
 All three service adapters select the route's existing bound Jinja template and enqueue the rendered result through the same durable delivery path.
+
+### Emby template pack
+
+The bundled Emby template pack is stored in `src/notifyhub/emby_templates.json`. A fresh data volume is seeded with the pack automatically. To merge it into an existing data volume without replacing custom templates, run:
+
+```bash
+python scripts/install_emby_templates.py --data-dir ./data
+```
+
+The pack covers playback start/pause/resume/end, movie/series/audio library additions, deletion, authentication success/failure, plugin installation/removal, intro-skip updates, played/unplayed marks, ratings, server startup, and update availability.
+
+Configure Emby to POST its webhook JSON to:
+
+```text
+/api/service/emby/notify/<route_id>?emby_url=https://your-emby.example
+```
+
+The route must bind the corresponding `emby_*` templates. `emby_url` is used to generate the media image and Emby item link; an explicit `push_link_url` in the JSON body still takes precedence.

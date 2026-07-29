@@ -1,0 +1,112 @@
+{
+  "template": [
+    {
+      "name": "emby_playback_start",
+      "type": "Emby.PlaybackStart",
+      "title": "{{ notification_title }}",
+      "content": "{{ content }}"
+    },
+    {
+      "name": "emby_playback_pause",
+      "type": "Emby.PlaybackPause",
+      "title": "{{ notification_title }}",
+      "content": "{{ content }}"
+    },
+    {
+      "name": "emby_playback_unpause",
+      "type": "Emby.PlaybackUnpause",
+      "title": "{{ notification_title }}",
+      "content": "{{ content }}"
+    },
+    {
+      "name": "emby_playback_end",
+      "type": "Emby.PlaybackEnd",
+      "title": "{{ notification_title }}",
+      "content": "{{ content }}"
+    },
+    {
+      "name": "emby_library_new_movie",
+      "type": "Emby.LibraryNewMovie",
+      "title": "{{ notification_title }}",
+      "content": "{{ content }}"
+    },
+    {
+      "name": "emby_library_new_series",
+      "type": "Emby.LibraryNewSeries",
+      "title": "{{ notification_title }}",
+      "content": "{{ content }}"
+    },
+    {
+      "name": "emby_library_new_audio",
+      "type": "Emby.LibraryNewAudio",
+      "title": "{{ notification_title }}",
+      "content": "{{ content }}"
+    },
+    {
+      "name": "emby_library_deleted",
+      "type": "Emby.LibraryDeleted",
+      "title": "{{ notification_title }}",
+      "content": "{{ content }}"
+    },
+    {
+      "name": "emby_user_authenticated",
+      "type": "Emby.UserAuthenticated",
+      "title": "{{ notification_title }}",
+      "content": "{{ content }}"
+    },
+    {
+      "name": "emby_user_authentication_failed",
+      "type": "Emby.UserAuthenticationFailed",
+      "title": "{{ notification_title }}",
+      "content": "{{ content }}"
+    },
+    {
+      "name": "emby_plugin_installed",
+      "type": "Emby.PluginInstalled",
+      "title": "{{ notification_title }}",
+      "content": "{{ content }}"
+    },
+    {
+      "name": "emby_plugin_uninstalled",
+      "type": "Emby.PluginUninstalled",
+      "title": "{{ notification_title }}",
+      "content": "{{ content }}"
+    },
+    {
+      "name": "emby_introskip_update",
+      "type": "Emby.IntroskipUpdate",
+      "title": "{{ notification_title }}",
+      "content": "{{ content }}"
+    },
+    {
+      "name": "emby_item_marked_played",
+      "type": "Emby.ItemMarkedPlayed",
+      "title": "{{ notification_title }}",
+      "content": "{{ content }}"
+    },
+    {
+      "name": "emby_item_marked_unplayed",
+      "type": "Emby.ItemMarkedUnplayed",
+      "title": "{{ notification_title }}",
+      "content": "{{ content }}"
+    },
+    {
+      "name": "emby_item_rated",
+      "type": "Emby.ItemRated",
+      "title": "{{ notification_title }}",
+      "content": "{{ content }}"
+    },
+    {
+      "name": "emby_system_startup",
+      "type": "Emby.SystemStartup",
+      "title": "{{ notification_title }}",
+      "content": "{{ content }}"
+    },
+    {
+      "name": "emby_system_update_available",
+      "type": "Emby.SystemUpdateAvailable",
+      "title": "{{ notification_title }}",
+      "content": "{{ content }}"
+    }
+  ]
+}
