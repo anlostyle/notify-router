@@ -29,7 +29,7 @@ from .controller.server import Server
 from .plugin_supervisor import PluginSupervisor
 from .plugin_store import PluginStore, _validate_remote_url
 from .plugins.common import run_after_setup_hooks
-from .service_compat import normalize_escaped_line_breaks, parse_emby, parse_pve, parse_watchtower
+from .service_compat import normalize_escaped_line_breaks, parse_emby, parse_pve, parse_watchtower, registered_event_types
 from .store import Store, enabled, redact_secret_text
 from .worker import DeliveryWorker
 from .modules.monitor.api import build_monitor_router
@@ -627,6 +627,11 @@ def save_config(payload: dict = Body(...)):
 @app.get("/api/admin/templates", dependencies=[Depends(admin_auth)])
 def templates():
     return {"template": store.templates}
+
+
+@app.get("/api/admin/event-types", dependencies=[Depends(admin_auth)])
+def event_types():
+    return {"event_types": registered_event_types()}
 
 
 @app.put("/api/admin/templates", dependencies=[Depends(admin_auth)])

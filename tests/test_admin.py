@@ -54,6 +54,24 @@ def test_dashboard_stats_and_delivery_filter(tmp_path):
     assert store.delivery_status(status="failed") == []
 
 
+def test_admin_event_types_lists_registered_types(tmp_path, monkeypatch):
+    monkeypatch.setenv("WORKDIR", str(tmp_path))
+    monkeypatch.setenv("NH_USER", "admin")
+    monkeypatch.setenv("NH_PASSWORD", "test-password")
+    main = importlib.import_module("notifyhub.main")
+    monkeypatch.setattr(main, "store", Store(tmp_path))
+    client = TestClient(main.app)
+    try:
+        assert client.post("/api/admin/login", json={"username": "admin", "password": "test-password"}).status_code == 200
+        response = client.get("/api/admin/event-types")
+        assert response.status_code == 200
+        values = response.json()["event_types"]
+        assert any(item == {"value": "Emby.PlaybackPause", "label": "Emby · 暂停播放"} for item in values)
+        assert any(item == {"value": "PVE.Backup", "label": "PVE · 备份"} for item in values)
+    finally:
+        client.close()
+
+
 def test_log_and_delivery_errors_hide_embedded_tokens():
     value = "POST https://api.telegram.org/bot123456:ABC/sendMessage?access_token=secret Authorization: Bearer private"
     safe = redact_secret_text(value)

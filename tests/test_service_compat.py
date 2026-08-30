@@ -1,6 +1,6 @@
 import json
 
-from notifyhub.service_compat import normalize_escaped_line_breaks, parse_emby, parse_pve, parse_watchtower
+from notifyhub.service_compat import normalize_escaped_line_breaks, parse_emby, parse_pve, parse_watchtower, registered_event_types
 from notifyhub.store import Store
 
 
@@ -196,3 +196,16 @@ def test_escaped_line_breaks_only_decode_labelled_payloads():
     assert normalize_escaped_line_breaks(command) == command
     actual = "节点：1panel-server\n状态：success"
     assert normalize_escaped_line_breaks(actual) == actual
+
+
+def test_registered_event_types_include_all_native_events_with_chinese_labels():
+    values = registered_event_types()
+    assert len(values) == 24
+    assert {item["value"] for item in values} >= {
+        "Emby.PlaybackPause",
+        "Emby.LibraryNewAudio",
+        "Emby.SystemUpdateAvailable",
+        "PVE.Garbage",
+        "Watchtower.Error",
+    }
+    assert all(item["label"] != item["value"] for item in values)

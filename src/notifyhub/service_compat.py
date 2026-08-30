@@ -43,6 +43,38 @@ EMBY_EVENTS = {
     "introskip.update": "Emby.IntroskipUpdate",
 }
 
+
+REGISTERED_EVENT_TYPES = (
+    ("Emby.PlaybackStart", "Emby · 开始播放"),
+    ("Emby.PlaybackPause", "Emby · 暂停播放"),
+    ("Emby.PlaybackUnpause", "Emby · 恢复播放"),
+    ("Emby.PlaybackEnd", "Emby · 停止播放"),
+    ("Emby.LibraryNewMovie", "Emby · 电影入库"),
+    ("Emby.LibraryNewSeries", "Emby · 剧集入库"),
+    ("Emby.LibraryNewAudio", "Emby · 音乐入库"),
+    ("Emby.LibraryDeleted", "Emby · 删除媒体"),
+    ("Emby.UserAuthenticated", "Emby · 登录成功"),
+    ("Emby.UserAuthenticationFailed", "Emby · 登录失败"),
+    ("Emby.PluginInstalled", "Emby · 插件安装"),
+    ("Emby.PluginUninstalled", "Emby · 插件卸载"),
+    ("Emby.IntroskipUpdate", "Emby · 片头标记更新"),
+    ("Emby.ItemMarkedPlayed", "Emby · 标记已播放"),
+    ("Emby.ItemMarkedUnplayed", "Emby · 标记未播放"),
+    ("Emby.ItemRated", "Emby · 评分/收藏"),
+    ("Emby.SystemStartup", "Emby · 服务启动"),
+    ("Emby.SystemUpdateAvailable", "Emby · 新版本可用"),
+    ("PVE.Backup", "PVE · 备份"),
+    ("PVE.Pruning", "PVE · 数据存储精简"),
+    ("PVE.Garbage", "PVE · 垃圾回收"),
+    ("Watchtower.Update", "Watchtower · 镜像更新"),
+    ("Watchtower.Error", "Watchtower · 更新异常"),
+    ("Watchtower.Start", "Watchtower · 启动检查"),
+)
+
+
+def registered_event_types():
+    return [{"value": value, "label": label} for value, label in REGISTERED_EVENT_TYPES]
+
 ITEM_TYPE_LABELS = {
     "Movie": "电影",
     "Episode": "剧集",

@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.6.8 - 2026-08-30
+
+- Add a Chinese-labelled picker for all registered native event types when creating or editing templates, with support for custom event type values.
+
 ## 0.6.7 - 2026-08-30
 
 - Keep only the four built-in Emby templates used by the default setup: playback start/stop and movie/series library additions.

@@ -41,6 +41,7 @@ const state = {
   status: null,
   config: null,
   templates: [],
+  eventTypes: [],
   plugins: [],
   pluginStore: { sources: [], plugins: [] },
   pluginStoreLoading: false,
@@ -144,13 +145,14 @@ async function showApp(session) {
 }
 
 async function loadCore() {
-  const [status, config, templatePayload, plugins, monitors, tasks] = await Promise.all([
-    api('/api/admin/status'), api('/api/admin/config'), api('/api/admin/templates'), api('/api/admin/plugins'),
+  const [status, config, templatePayload, eventTypePayload, plugins, monitors, tasks] = await Promise.all([
+    api('/api/admin/status'), api('/api/admin/config'), api('/api/admin/templates'), api('/api/admin/event-types'), api('/api/admin/plugins'),
     api('/api/admin/monitors'), api('/api/admin/tasks'),
   ])
   state.status = status
   state.config = config
   state.templates = templatePayload.template || []
+  state.eventTypes = eventTypePayload.event_types || []
   state.plugins = plugins || []
   state.monitors = monitors || { items: [], events: [], summary: {} }
   state.tasks = tasks || { items: [], runs: [], summary: {} }
@@ -519,15 +521,20 @@ function openRouteForm(route = null) {
 
 function openTemplateForm(template = null) {
   const original = template ? structuredClone(template) : { name: '', type: '', description: '', title: '{{ title }}', content: '{{ content }}' }
+  const knownType = state.eventTypes.some(item => item.value === original.type)
+  const typeOptions = state.eventTypes.map(item => `<option value="${escapeHtml(item.value)}" ${original.type === item.value ? 'selected' : ''}>${escapeHtml(item.label)}（${escapeHtml(item.value)}）</option>`).join('')
   openModal({
     eyebrow: template ? '编辑通知模板' : '新增通知模板', title: template ? original.name : '创建通知模板', wide: true,
-    body: `<div class="dialog-grid"><div><div class="field-row">${formField('name', '模板名称', 'text', original.name, '例如：短信通知')}${formField('type', '事件类型', 'text', original.type, '例如：PVE.Backup')}</div>${formField('description', '模板说明', 'text', original.description || '', '说明这个模板的使用场景')}${formField('title', '通知标题', 'textarea', original.title || '')}${formField('content', '通知内容', 'textarea', original.content || '')}<p class="form-note">保持现有 Jinja 模板变量不变，例如 <code>{{ device_name }}</code>。变量由实际推送来源填充。</p></div><aside class="preview-pane"><p class="eyebrow">News 实时预览</p><div class="news-preview"><div class="news-image">${icon('bell')}</div><div class="news-copy"><h3 id="preview-title">${escapeHtml(original.title || '通知标题')}</h3><p id="preview-content">${escapeHtml(original.content || '通知内容')}</p></div></div><p class="preview-note">这是企业微信 News 卡片的内容结构预览；图片和链接来自通道或推送请求。</p></aside></div>`,
+    body: `<div class="dialog-grid"><div><div class="field-row">${formField('name', '模板名称', 'text', original.name, '例如：短信通知')}<label class="field"><span>事件类型</span><select name="type_choice"><option value="">请选择已注册事件类型</option>${typeOptions}<option value="__custom__" ${knownType ? '' : 'selected'}>自定义事件类型</option></select><input name="type_custom" type="text" value="${escapeHtml(knownType ? '' : original.type)}" placeholder="例如：MyService.Alert" autocomplete="off" ${knownType ? 'hidden' : ''}><small>可选择已注册类型，也可以选择“自定义事件类型”手动输入。</small></label></div>${formField('description', '模板说明', 'text', original.description || '', '说明这个模板的使用场景')}${formField('title', '通知标题', 'textarea', original.title || '')}${formField('content', '通知内容', 'textarea', original.content || '')}<p class="form-note">保持现有 Jinja 模板变量不变，例如 <code>{{ device_name }}</code>。变量由实际推送来源填充。</p></div><aside class="preview-pane"><p class="eyebrow">News 实时预览</p><div class="news-preview"><div class="news-image">${icon('bell')}</div><div class="news-copy"><h3 id="preview-title">${escapeHtml(original.title || '通知标题')}</h3><p id="preview-content">${escapeHtml(original.content || '通知内容')}</p></div></div><p class="preview-note">这是企业微信 News 卡片的内容结构预览；图片和链接来自通道或推送请求。</p></aside></div>`,
     onSubmit: async form => {
       const data = new FormData(form)
       const name = String(data.get('name') || '').trim()
+      const typeChoice = String(data.get('type_choice') || '')
+      const type = typeChoice === '__custom__' ? String(data.get('type_custom') || '').trim() : typeChoice
       if (!name) throw new Error('请输入模板名称')
+      if (!type) throw new Error('请选择已注册事件类型，或选择自定义后输入类型')
       if (state.templates.some(item => item.name === name && item.name !== template?.name)) throw new Error('模板名称已存在')
-      const next = { ...original, name, type: String(data.get('type') || '').trim(), description: String(data.get('description') || '').trim(), title: String(data.get('title') || ''), content: String(data.get('content') || '') }
+      const next = { ...original, name, type, description: String(data.get('description') || '').trim(), title: String(data.get('title') || ''), content: String(data.get('content') || '') }
       const templates = [...state.templates]
       const index = templates.findIndex(item => item.name === template?.name)
       if (index >= 0) templates[index] = next
@@ -536,6 +543,13 @@ function openTemplateForm(template = null) {
       if (template && template.name !== name) await api('/api/admin/config', { method: 'PUT', body: JSON.stringify({ ...state.config, routes }) })
       await saveTemplates(templates, template ? '模板已更新' : '模板已创建')
     },
+  })
+  const typeChoice = $('#modal-body select[name="type_choice"]')
+  const customType = $('#modal-body input[name="type_custom"]')
+  typeChoice.addEventListener('change', () => {
+    const custom = typeChoice.value === '__custom__'
+    customType.hidden = !custom
+    if (!custom && typeChoice.value) customType.value = typeChoice.value
   })
   const updatePreview = () => {
     $('#preview-title').textContent = $('#modal-body [name="title"]').value || '通知标题'

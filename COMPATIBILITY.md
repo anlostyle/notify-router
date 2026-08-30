@@ -52,6 +52,9 @@ with any missing built-in templates without replacing custom templates.
 
 The built-in Emby pack covers playback start/stop and movie/series library additions. PVE backup/pruning/garbage-collection and Watchtower update/error/start events are also included.
 
+The template editor exposes all registered native event type values with
+Chinese labels and accepts custom event type values for other integrations.
+
 Configure Emby to POST its webhook JSON to:
 
 ```text

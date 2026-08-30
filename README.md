@@ -64,6 +64,10 @@ movie/series library additions), plus PVE and Watchtower templates. Existing
 data directories receive only missing built-in templates; custom templates are
 kept unchanged.
 
+When creating a template, the event type field lists all registered Emby, PVE,
+and Watchtower event types with Chinese labels. Select “自定义事件类型” for
+other integrations.
+
 ## Backups and retention
 
 When the delivery queue is idle, the service creates one SQLite-consistent
