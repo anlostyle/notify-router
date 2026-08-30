@@ -36,6 +36,53 @@ const CHANNEL_TYPES = {
   webhook: { label: 'Webhook', short: 'W', fields: [['url', 'Webhook 地址', 'url']] },
 }
 
+const DEFAULT_TEMPLATE_TYPE = 'default'
+const TEMPLATE_EVENT_GROUPS = [
+  {
+    label: '默认',
+    values: [[DEFAULT_TEMPLATE_TYPE, '默认']],
+  },
+  {
+    label: 'Emby',
+    values: [
+      ['Emby.PlaybackStart', '播放开始'],
+      ['Emby.PlaybackEnd', '播放停止'],
+      ['Emby.LibraryNewMovie', '电影入库'],
+      ['Emby.LibraryNewSeries', '剧集入库'],
+      ['Emby.PlaybackPause', '暂停播放'],
+      ['Emby.PlaybackUnpause', '恢复播放'],
+      ['Emby.LibraryNewAudio', '音乐入库'],
+      ['Emby.LibraryDeleted', '删除媒体'],
+      ['Emby.UserAuthenticated', '登录成功'],
+      ['Emby.UserAuthenticationFailed', '登录失败'],
+      ['Emby.PluginInstalled', '插件安装'],
+      ['Emby.PluginUninstalled', '插件卸载'],
+      ['Emby.IntroskipUpdate', '片头标记更新'],
+      ['Emby.ItemMarkedPlayed', '标记已播放'],
+      ['Emby.ItemMarkedUnplayed', '标记未播放'],
+      ['Emby.ItemRated', '评分/收藏'],
+      ['Emby.SystemStartup', '服务启动'],
+      ['Emby.SystemUpdateAvailable', '新版本可用'],
+    ],
+  },
+  {
+    label: 'PVE',
+    values: [
+      ['PVE.Backup', '备份任务'],
+      ['PVE.Pruning', '精简任务'],
+      ['PVE.Garbage', '垃圾回收'],
+    ],
+  },
+  {
+    label: 'Watchtower',
+    values: [
+      ['Watchtower.Update', '镜像更新'],
+      ['Watchtower.Start', '启动事件'],
+      ['Watchtower.Error', '错误事件'],
+    ],
+  },
+]
+
 const state = {
   session: null,
   status: null,
@@ -73,6 +120,39 @@ function matches(...values) {
 
 function typeInfo(type) {
   return CHANNEL_TYPES[type] || { label: type || '未知类型', short: String(type || '?').slice(0, 2).toUpperCase(), fields: [] }
+}
+
+function templateEventOptions(selectedType) {
+  const registered = new Map((state.eventTypes || []).map(item => [String(item.value), item]))
+  const groups = TEMPLATE_EVENT_GROUPS.map(group => ({ label: group.label, values: group.values.slice() }))
+  const assigned = new Set()
+
+  for (const group of groups) {
+    group.values = group.values.filter(([value]) => value === DEFAULT_TEMPLATE_TYPE || registered.has(value))
+    group.values.forEach(([value]) => assigned.add(value))
+  }
+
+  // Keep newly registered plugin/native events available without flattening the built-in groups.
+  for (const item of registered.values()) {
+    const value = String(item.value || '')
+    if (!value || assigned.has(value)) continue
+    const groupName = value.split('.', 1)[0]
+    let group = groups.find(entry => entry.label === groupName)
+    const rawLabel = String(item.label || value)
+    const label = rawLabel.startsWith(`${groupName} · `) ? rawLabel.slice(groupName.length + 3) : rawLabel.startsWith(`${groupName}:`) ? rawLabel.slice(groupName.length + 1).trim() : rawLabel
+    if (!group) {
+      group = { label: groupName || '其他', values: [] }
+      groups.push(group)
+    }
+    group.values.push([value, label])
+    assigned.add(value)
+  }
+
+  const options = groups.map(group => {
+    const values = group.values.map(([value, label]) => `<option value="${escapeHtml(value)}" ${selectedType === value ? 'selected' : ''}>${escapeHtml(label)}</option>`).join('')
+    return values ? `<optgroup label="${escapeHtml(group.label)}">${values}</optgroup>` : ''
+  }).join('')
+  return options
 }
 
 function formatDate(value) {
@@ -521,11 +601,12 @@ function openRouteForm(route = null) {
 
 function openTemplateForm(template = null) {
   const original = template ? structuredClone(template) : { name: '', type: '', description: '', title: '{{ title }}', content: '{{ content }}' }
-  const knownType = state.eventTypes.some(item => item.value === original.type)
-  const typeOptions = state.eventTypes.map(item => `<option value="${escapeHtml(item.value)}" ${original.type === item.value ? 'selected' : ''}>${escapeHtml(item.label)}（${escapeHtml(item.value)}）</option>`).join('')
+  const selectedType = original.type || DEFAULT_TEMPLATE_TYPE
+  const knownType = selectedType === DEFAULT_TEMPLATE_TYPE || state.eventTypes.some(item => item.value === selectedType)
+  const typeOptions = templateEventOptions(selectedType)
   openModal({
     eyebrow: template ? '编辑通知模板' : '新增通知模板', title: template ? original.name : '创建通知模板', wide: true,
-    body: `<div class="dialog-grid"><div><div class="field-row">${formField('name', '模板名称', 'text', original.name, '例如：短信通知')}<label class="field"><span>事件类型</span><select name="type_choice"><option value="">请选择已注册事件类型</option>${typeOptions}<option value="__custom__" ${knownType ? '' : 'selected'}>自定义事件类型</option></select><input name="type_custom" type="text" value="${escapeHtml(knownType ? '' : original.type)}" placeholder="例如：MyService.Alert" autocomplete="off" ${knownType ? 'hidden' : ''}><small>可选择已注册类型，也可以选择“自定义事件类型”手动输入。</small></label></div>${formField('description', '模板说明', 'text', original.description || '', '说明这个模板的使用场景')}${formField('title', '通知标题', 'textarea', original.title || '')}${formField('content', '通知内容', 'textarea', original.content || '')}<p class="form-note">保持现有 Jinja 模板变量不变，例如 <code>{{ device_name }}</code>。变量由实际推送来源填充。</p></div><aside class="preview-pane"><p class="eyebrow">News 实时预览</p><div class="news-preview"><div class="news-image">${icon('bell')}</div><div class="news-copy"><h3 id="preview-title">${escapeHtml(original.title || '通知标题')}</h3><p id="preview-content">${escapeHtml(original.content || '通知内容')}</p></div></div><p class="preview-note">这是企业微信 News 卡片的内容结构预览；图片和链接来自通道或推送请求。</p></aside></div>`,
+    body: `<div class="dialog-grid"><div><div class="field-row">${formField('name', '模板名称', 'text', original.name, '例如：短信通知')}<label class="field"><span>事件类型</span><select name="type_choice">${typeOptions}<option value="__custom__" ${knownType ? '' : 'selected'}>自定义事件类型</option></select><input name="type_custom" type="text" value="${escapeHtml(knownType ? '' : original.type)}" placeholder="例如：MyService.Alert" autocomplete="off" ${knownType ? 'hidden' : ''}><small>内置事件按模块分组显示；也可以选择“自定义事件类型”手动输入。</small></label></div>${formField('description', '模板说明', 'text', original.description || '', '说明这个模板的使用场景')}${formField('title', '通知标题', 'textarea', original.title || '')}${formField('content', '通知内容', 'textarea', original.content || '')}<p class="form-note">保持现有 Jinja 模板变量不变，例如 <code>{{ device_name }}</code>。变量由实际推送来源填充。</p></div><aside class="preview-pane"><p class="eyebrow">News 实时预览</p><div class="news-preview"><div class="news-image">${icon('bell')}</div><div class="news-copy"><h3 id="preview-title">${escapeHtml(original.title || '通知标题')}</h3><p id="preview-content">${escapeHtml(original.content || '通知内容')}</p></div></div><p class="preview-note">这是企业微信 News 卡片的内容结构预览；图片和链接来自通道或推送请求。</p></aside></div>`,
     onSubmit: async form => {
       const data = new FormData(form)
       const name = String(data.get('name') || '').trim()
