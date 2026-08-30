@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.6.9 - 2026-08-30
+
+- Preserve explicit empty image URLs so a request can disable a route default image.
+- Normalize legacy scalar route channel and template bindings to arrays.
+
 ## 0.6.8 - 2026-08-30
 
 - Add a Chinese-labelled picker for all registered native event types when creating or editing templates, with support for custom event type values.

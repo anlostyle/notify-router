@@ -168,6 +168,13 @@ def test_notify_api_keeps_legacy_response_shape(tmp_path, monkeypatch):
         with main.store.connect() as db:
             image = db.execute("SELECT push_img_url FROM outbox ORDER BY rowid DESC LIMIT 1").fetchone()[0]
         assert image == "https://example.com/custom.png"
+        assert client.post(
+            "/api/service/notify",
+            json={"route_id": "r1", "title": "explicitly no image", "content": "content", "push_img_url": ""},
+        ).status_code == 200
+        with main.store.connect() as db:
+            image = db.execute("SELECT push_img_url FROM outbox ORDER BY rowid DESC LIMIT 1").fetchone()[0]
+        assert image is None
         providers = {item["provider"] for item in main.store.list_monitors()}
         assert {"nezha", "watchtower", "pve"} <= providers
 

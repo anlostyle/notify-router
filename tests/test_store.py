@@ -45,6 +45,29 @@ def test_legacy_config_enqueues_and_records(tmp_path):
     assert " " in record["push_time"] and "+" not in record["push_time"]
 
 
+def test_scalar_route_fields_are_normalized(tmp_path):
+    store = Store(tmp_path)
+    config = legacy_config()
+    config["routes"][0]["channel_name"] = "短信转发器"
+    config["routes"][0]["bind_template"] = "sms"
+
+    store.save_config(config)
+
+    route = store.route("route_sms")
+    assert route["channel_name"] == ["短信转发器"]
+    assert route["bind_template"] == ["sms"]
+    assert store.enqueue_router("route_sms", "title", "content")
+
+
+def test_explicit_empty_image_disables_route_default(tmp_path):
+    store = Store(tmp_path)
+    store.save_config(legacy_config())
+    store.enqueue_router("route_sms", "title", "content", push_img_url="")
+
+    item = store.claim_delivery()
+    assert item["push_img_url"] is None
+
+
 def test_plugin_config_uses_existing_table_shape(tmp_path):
     store = Store(tmp_path)
     store.save_plugin_config("demo", "Demo", {"token": "value"})

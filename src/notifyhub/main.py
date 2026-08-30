@@ -360,7 +360,8 @@ def enqueue_event(route_id, event, template_type, context, message, push_img_url
         return notify_error(f"未找到或未激活的通道: {route_id}")
     try:
         title, content = store.render_event(route, template_type, context)
-        store.enqueue_router(route_id, title, content, push_img_url or route.get("push_img") or fallback_img_url, push_link_url)
+        image = (route.get("push_img") or fallback_img_url) if push_img_url is None else push_img_url
+        store.enqueue_router(route_id, title, content, image, push_link_url)
     except ValueError as exc:
         return notify_error(str(exc))
     return {

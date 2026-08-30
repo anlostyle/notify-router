@@ -46,6 +46,28 @@ def enabled(value):
     return value is True or str(value).lower() in {"1", "true", "yes", "on"}
 
 
+def _name_list(value):
+    if isinstance(value, (list, tuple)):
+        values = value
+    elif value is None or value == "":
+        values = []
+    else:
+        values = [value]
+    return [str(item) for item in values if item is not None and item != ""]
+
+
+def _normalise_config(config):
+    routes = config.get("routes") if isinstance(config, dict) else None
+    if not isinstance(routes, list):
+        return config
+    for route in routes:
+        if isinstance(route, dict):
+            for key in ("channel_name", "bind_template"):
+                if key in route:
+                    route[key] = _name_list(route[key])
+    return config
+
+
 class Store:
     def __init__(self, data_dir):
         self.data_dir = Path(data_dir)
@@ -333,11 +355,12 @@ class Store:
     @property
     def config(self):
         with self._config_lock:
-            return json.loads(self.config_path.read_text(encoding="utf-8"))
+            return _normalise_config(json.loads(self.config_path.read_text(encoding="utf-8")))
 
     def save_config(self, config):
         if not isinstance(config, dict) or not isinstance(config.get("app"), dict) or not isinstance(config.get("channels"), list) or not isinstance(config.get("routes"), list):
             raise ValueError("config must contain app, channels and routes")
+        _normalise_config(config)
         channel_names = [x.get("name") for x in config["channels"] if isinstance(x, dict)]
         route_ids = [x.get("route_id") for x in config["routes"] if isinstance(x, dict)]
         if len(channel_names) != len(config["channels"]) or None in channel_names or len(channel_names) != len(set(channel_names)):
@@ -378,7 +401,7 @@ class Store:
             temp.replace(self.templates_path)
 
     def render_event(self, route, template_type, context):
-        bound = set(route.get("bind_template") or [])
+        bound = set(_name_list(route.get("bind_template")))
         template = next((x for x in self.templates if x.get("type") == template_type and x.get("name") in bound), None)
         if not template:
             raise ValueError(f"route has no bound template for {template_type}")
@@ -403,7 +426,7 @@ class Store:
             raise KeyError(f"route not found: {route_id}")
         if not enabled(route.get("active", True)):
             raise ValueError(f"route disabled: {route_id}")
-        channel_names = list(dict.fromkeys(route.get("channel_name") or []))
+        channel_names = list(dict.fromkeys(_name_list(route.get("channel_name"))))
         if not channel_names:
             raise ValueError(f"route has no channels: {route_id}")
         return self._enqueue(
@@ -412,7 +435,7 @@ class Store:
             channel_names,
             title,
             content,
-            push_img_url or route.get("push_img") or None,
+            route.get("push_img") if push_img_url is None else (push_img_url or None),
             push_link_url,
         )
 
