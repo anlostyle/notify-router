@@ -29,7 +29,7 @@ from .controller.server import Server
 from .plugin_supervisor import PluginSupervisor
 from .plugin_store import PluginStore, _validate_remote_url
 from .plugins.common import run_after_setup_hooks
-from .service_compat import parse_emby, parse_pve, parse_watchtower
+from .service_compat import normalize_escaped_line_breaks, parse_emby, parse_pve, parse_watchtower
 from .store import Store, enabled, redact_secret_text
 from .worker import DeliveryWorker
 from .modules.monitor.api import build_monitor_router
@@ -318,7 +318,7 @@ def enqueue(payload):
         store.enqueue_router(
             payload.route_id,
             title,
-            payload.content,
+            normalize_escaped_line_breaks(payload.content),
             payload.push_img_url,
             payload.push_link_url,
         )

@@ -30,6 +30,10 @@ The generic `/api/service/notify` endpoint accepts `route_id`, `title`, `content
 /api/service/notify?route_id=route_id&title={title}&content={content}
 ```
 
+URL callers should encode a real line break as `%0A`, not a literal `\\n`
+(`%5Cn`). For labelled line-oriented payloads, Notify Router also accepts the
+common double-escaped form and decodes it before delivery.
+
 ## Native service endpoints
 
 - Emby: `/api/service/emby/notify/{route_id}`
@@ -39,15 +43,14 @@ The generic `/api/service/notify` endpoint accepts `route_id`, `title`, `content
 
 All three service adapters select the route's existing bound Jinja template and enqueue the rendered result through the same durable delivery path.
 
-### Emby template pack
+### Built-in template pack
 
-The bundled Emby template pack is stored in `src/notifyhub/emby_templates.json`. A fresh data volume is seeded with the pack automatically. To merge it into an existing data volume without replacing custom templates, run:
+The bundled Emby, PVE, and Watchtower templates are stored in
+`src/notifyhub/emby_templates.json`. A fresh data volume is seeded with the
+pack automatically. On startup, an existing `notify_template.json` is merged
+with any missing built-in templates without replacing custom templates.
 
-```bash
-python scripts/install_emby_templates.py --data-dir ./data
-```
-
-The pack covers playback start/pause/resume/end, movie/series/audio library additions, deletion, authentication success/failure, plugin installation/removal, intro-skip updates, played/unplayed marks, ratings, server startup, and update availability.
+The pack covers playback start/pause/resume/end, movie/series/audio library additions, deletion, authentication success/failure, plugin installation/removal, intro-skip updates, played/unplayed marks, ratings, server startup, update availability, PVE backup/pruning/garbage-collection, and Watchtower update/error/start events.
 
 Configure Emby to POST its webhook JSON to:
 

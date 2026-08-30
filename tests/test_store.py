@@ -1,3 +1,4 @@
+import json
 import tarfile
 from datetime import datetime
 
@@ -74,6 +75,22 @@ def test_config_rejects_routes_with_missing_channels(tmp_path):
         assert "missing channels" in str(exc)
     else:
         raise AssertionError("invalid config was saved")
+
+
+def test_existing_template_file_is_merged_without_overwriting_custom_values(tmp_path):
+    conf_dir = tmp_path / "conf"
+    conf_dir.mkdir()
+    custom = {"name": "emby_playback_start", "type": "Emby.PlaybackStart", "title": "自定义", "content": "保留"}
+    (conf_dir / "notify_template.json").write_text(json.dumps({"template": [custom]}), encoding="utf-8")
+
+    store = Store(tmp_path)
+
+    templates = store.templates
+    assert len(templates) == 24
+    assert next(item for item in templates if item["name"] == custom["name"]) == custom
+    assert {item["type"] for item in templates} >= {"PVE.Backup", "Watchtower.Update"}
+    assert (conf_dir / "notify_template.json.bak").exists()
+    assert len(Store(tmp_path).templates) == 24
 
 
 def test_processing_delivery_is_recovered_after_restart(tmp_path):

@@ -60,6 +60,18 @@ PLAY_METHOD_LABELS = {
 
 _TICKS_PER_SECOND = 10_000_000
 _LOCAL_TIMEZONE = timezone(timedelta(hours=8))
+_LABEL_LINE = re.compile(r"^\s*[^:\r\n]{1,64}[：:]\s*.*$")
+
+
+def normalize_escaped_line_breaks(value):
+    """Decode only line-oriented ``\\n`` payloads, leaving command text intact."""
+    text = str(value or "")
+    if "\\n" not in text and "\\r" not in text:
+        return text
+    parts = re.split(r"\\r\\n|\\n|\\r", text)
+    if len(parts) < 2 or not all(_LABEL_LINE.match(part) for part in parts):
+        return text
+    return "\n".join(parts)
 
 
 def _number(value, default=0.0):

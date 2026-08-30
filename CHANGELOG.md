@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.6.6 - 2026-08-30
+
+- Decode clearly labelled double-escaped line breaks without changing command text.
+- Seed and merge built-in Emby, PVE, and Watchtower notification templates.
+- Update Compose examples to the current release.
+
 ## 0.6.1 - 2026-07-20
 
 - Load monitoring and task navigation counts during the initial console refresh.

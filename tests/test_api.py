@@ -87,6 +87,19 @@ def test_notify_api_keeps_legacy_response_shape(tmp_path, monkeypatch):
             queued = db.execute("SELECT title, content FROM outbox ORDER BY rowid DESC LIMIT 1").fetchone()
         assert tuple(queued) == ("body title", "body content")
 
+        response = client.post(
+            "/api/service/notify",
+            json={
+                "route_id": "r1",
+                "title": "escaped line breaks",
+                "content": "节点：1panel-server\\n脚本：smartdns.sh\\n状态：success",
+            },
+        )
+        assert response.status_code == 200
+        with main.store.connect() as db:
+            queued = db.execute("SELECT content FROM outbox WHERE title=?", ("escaped line breaks",)).fetchone()
+        assert queued[0] == "节点：1panel-server\n脚本：smartdns.sh\n状态：success"
+
         for title, expected in (
             ("[事件] Pixel6(1.2.3.4) 又有设备离线啦～", "🔴 设备离线｜Pixel6(1.2.3.4)"),
             ("[恢复] Pixel6(1.2.3.4) 又有设备离线啦～", "✅ 设备恢复｜Pixel6(1.2.3.4)"),
