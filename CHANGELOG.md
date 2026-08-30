@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.6.10 - 2026-08-30
+
+- Group registered template event types by module in the event selector, with Chinese labels and a custom-event option.
+
 ## 0.6.9 - 2026-08-30
 
 - Preserve explicit empty image URLs so a request can disable a route default image.
