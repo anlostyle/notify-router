@@ -86,11 +86,11 @@ def test_existing_template_file_is_merged_without_overwriting_custom_values(tmp_
     store = Store(tmp_path)
 
     templates = store.templates
-    assert len(templates) == 24
+    assert len(templates) == 10
     assert next(item for item in templates if item["name"] == custom["name"]) == custom
     assert {item["type"] for item in templates} >= {"PVE.Backup", "Watchtower.Update"}
     assert (conf_dir / "notify_template.json.bak").exists()
-    assert len(Store(tmp_path).templates) == 24
+    assert len(Store(tmp_path).templates) == 10
 
 
 def test_processing_delivery_is_recovered_after_restart(tmp_path):

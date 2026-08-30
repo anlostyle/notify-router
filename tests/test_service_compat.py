@@ -143,10 +143,13 @@ def test_emby_parser_supports_all_legacy_event_branches():
 
 def test_fresh_store_seeds_bundled_emby_templates(tmp_path):
     store = Store(tmp_path)
-    names = {template["name"] for template in store.templates}
-    assert "emby_playback_start" in names
-    assert "emby_library_new_movie" in names
-    assert "emby_system_startup" in names
+    names = {template["name"] for template in store.templates if template["type"].startswith("Emby.")}
+    assert names == {
+        "emby_playback_start",
+        "emby_playback_end",
+        "emby_library_new_movie",
+        "emby_library_new_series",
+    }
 
     event, template_type, context = parse_emby(
         {"Event": "playback.start", "User": {"Name": "User"}, "Item": {"Type": "Movie", "Name": "Film"}}
@@ -166,7 +169,7 @@ def test_fresh_store_seeds_all_native_templates(tmp_path):
         "Watchtower.Error",
         "Watchtower.Start",
     } <= types
-    assert len(store.templates) == 24
+    assert len(store.templates) == 10
 
 
 def test_bundled_pve_and_watchtower_templates_render(tmp_path):

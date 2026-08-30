@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.6.7 - 2026-08-30
+
+- Keep only the four built-in Emby templates used by the default setup: playback start/stop and movie/series library additions.
+
 ## 0.6.6 - 2026-08-30
 
 - Decode clearly labelled double-escaped line breaks without changing command text.

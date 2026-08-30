@@ -50,7 +50,7 @@ The bundled Emby, PVE, and Watchtower templates are stored in
 pack automatically. On startup, an existing `notify_template.json` is merged
 with any missing built-in templates without replacing custom templates.
 
-The pack covers playback start/pause/resume/end, movie/series/audio library additions, deletion, authentication success/failure, plugin installation/removal, intro-skip updates, played/unplayed marks, ratings, server startup, update availability, PVE backup/pruning/garbage-collection, and Watchtower update/error/start events.
+The built-in Emby pack covers playback start/stop and movie/series library additions. PVE backup/pruning/garbage-collection and Watchtower update/error/start events are also included.
 
 Configure Emby to POST its webhook JSON to:
 

@@ -59,7 +59,8 @@ docker compose up -d --build
 Runtime data is stored only in `./data`. Images and source archives do not
 contain channels, routes, tokens, phone numbers, or notification history.
 
-The first start includes built-in Emby, PVE, and Watchtower templates. Existing
+The first start includes four built-in Emby templates (playback start/stop and
+movie/series library additions), plus PVE and Watchtower templates. Existing
 data directories receive only missing built-in templates; custom templates are
 kept unchanged.
 
