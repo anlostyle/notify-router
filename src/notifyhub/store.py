@@ -8,7 +8,6 @@ import threading
 import time
 import uuid
 from datetime import date, datetime, timedelta
-from importlib.resources import files
 from pathlib import Path
 from zoneinfo import ZoneInfo
 
@@ -16,16 +15,6 @@ from jinja2.sandbox import SandboxedEnvironment
 
 
 _jinja = SandboxedEnvironment(autoescape=False)
-
-
-def default_templates():
-    try:
-        raw = files("notifyhub").joinpath("emby_templates.json").read_text(encoding="utf-8")
-        value = json.loads(raw)
-        templates = value.get("template", [])
-        return templates if isinstance(templates, list) else []
-    except (FileNotFoundError, OSError, json.JSONDecodeError):
-        return []
 
 
 def redact_secret_text(value):
@@ -104,31 +93,11 @@ class Store:
             )
         if not self.templates_path.exists():
             self.templates_path.write_text(
-                json.dumps({"template": default_templates()}, ensure_ascii=False, indent=2) + "\n",
+                json.dumps({"template": []}, ensure_ascii=False, indent=2) + "\n",
                 encoding="utf-8",
             )
-        else:
-            self._merge_default_templates()
         self.config_path.chmod(0o600)
         self.templates_path.chmod(0o600)
-
-    def _merge_default_templates(self):
-        try:
-            payload = json.loads(self.templates_path.read_text(encoding="utf-8"))
-        except (OSError, json.JSONDecodeError):
-            return
-        if not isinstance(payload, dict) or not isinstance(payload.get("template"), list):
-            return
-        existing = payload["template"]
-        names = {item.get("name") for item in existing if isinstance(item, dict)}
-        additions = [item for item in default_templates() if item.get("name") not in names]
-        if not additions:
-            return
-        payload["template"] = [*existing, *additions]
-        temporary = self.templates_path.with_suffix(".json.tmp")
-        temporary.write_text(json.dumps(payload, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
-        shutil.copy2(self.templates_path, self.templates_path.with_suffix(".json.bak"))
-        temporary.replace(self.templates_path)
 
     def connect(self):
         db = sqlite3.connect(self.db_path, timeout=10)

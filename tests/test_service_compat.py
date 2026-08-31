@@ -141,54 +141,6 @@ def test_emby_parser_supports_all_legacy_event_branches():
         assert result[2]["content"] or event == "system.updateavailable"
 
 
-def test_fresh_store_seeds_bundled_emby_templates(tmp_path):
-    store = Store(tmp_path)
-    names = {template["name"] for template in store.templates if template["type"].startswith("Emby.")}
-    assert names == {
-        "emby_playback_start",
-        "emby_playback_end",
-        "emby_library_new_movie",
-        "emby_library_new_series",
-    }
-
-    event, template_type, context = parse_emby(
-        {"Event": "playback.start", "User": {"Name": "User"}, "Item": {"Type": "Movie", "Name": "Film"}}
-    )
-    rendered = store.render_event({"bind_template": ["emby_playback_start"]}, template_type, context)
-    assert rendered == ("User 开始播放电影：Film", "文件：电影")
-
-
-def test_fresh_store_seeds_all_native_templates(tmp_path):
-    store = Store(tmp_path)
-    types = {template["type"] for template in store.templates}
-    assert {
-        "PVE.Backup",
-        "PVE.Pruning",
-        "PVE.Garbage",
-        "Watchtower.Update",
-        "Watchtower.Error",
-        "Watchtower.Start",
-    } <= types
-    assert len(store.templates) == 10
-
-
-def test_bundled_pve_and_watchtower_templates_render(tmp_path):
-    store = Store(tmp_path)
-    cases = (
-        (parse_pve, {"title": "vzdump backup status (pve): OK", "message": "Total running time: 3s\nTotal size: 1 GB"}, "pve_backup", "备份"),
-        (parse_pve, {"title": "pruning datastore (pve): successful", "message": "Datastore: synology-nfs"}, "pve_pruning", "精简"),
-        (parse_pve, {"title": "garbage collection (pve): successful", "message": "Datastore: synology-nfs"}, "pve_garbage", "垃圾回收"),
-        (parse_watchtower, {"title": "Watchtower updates on host", "message": "Found new example/app:latest image"}, "watchtower_update", "更新"),
-        (parse_watchtower, {"title": "Watchtower updates on host", "message": "Unable to update container demo"}, "watchtower_error", "检测更新出错"),
-        (parse_watchtower, {"title": "Watchtower started", "message": "Watchtower started"}, "watchtower_start", "Watchtower started"),
-    )
-    for parser, payload, template_name, title_fragment in cases:
-        _, template_type, context = parser(payload)
-        title, content = store.render_event({"bind_template": [template_name]}, template_type, context)
-        assert title_fragment in title
-        assert content
-
-
 def test_escaped_line_breaks_only_decode_labelled_payloads():
     value = "节点：1panel-server\\n脚本：smartdns.sh\\n状态：success"
     assert normalize_escaped_line_breaks(value) == "节点：1panel-server\n脚本：smartdns.sh\n状态：success"

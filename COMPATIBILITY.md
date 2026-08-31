@@ -43,14 +43,11 @@ common double-escaped form and decodes it before delivery.
 
 All three service adapters select the route's existing bound Jinja template and enqueue the rendered result through the same durable delivery path.
 
-### Built-in template pack
+### Notification templates
 
-The bundled Emby, PVE, and Watchtower templates are stored in
-`src/notifyhub/emby_templates.json`. A fresh data volume is seeded with the
-pack automatically. On startup, an existing `notify_template.json` is merged
-with any missing built-in templates without replacing custom templates.
-
-The built-in Emby pack covers playback start/stop and movie/series library additions. PVE backup/pruning/garbage-collection and Watchtower update/error/start events are also included.
+A fresh data volume starts with an empty `notify_template.json`. Startup does
+not seed, merge, or replace notification templates. Administrators create the
+templates required by their Emby, PVE, Watchtower, and custom integrations.
 
 The template editor exposes all registered native event type values with
 Chinese labels and accepts custom event type values for other integrations.

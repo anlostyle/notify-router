@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+
+- Stop creating or restoring default notification templates during startup; fresh installations now start with an empty template list.
+
 ## 0.6.10 - 2026-08-30
 
 - Group registered template event types by module in the event selector, with Chinese labels and a custom-event option.
