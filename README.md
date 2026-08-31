@@ -61,8 +61,8 @@ contain channels, routes, tokens, phone numbers, or notification history.
 
 The first start includes four built-in Emby templates (playback start/stop and
 movie/series library additions), plus PVE and Watchtower templates. Existing
-data directories receive only missing built-in templates; custom templates are
-kept unchanged.
+template files are left unchanged on later starts, so user edits and deletions
+are preserved.
 
 When creating a template, the event type field lists all registered Emby, PVE,
 and Watchtower event types with Chinese labels. Select “自定义事件类型” for

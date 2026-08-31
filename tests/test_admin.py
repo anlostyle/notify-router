@@ -1,8 +1,17 @@
 import importlib
+from importlib.resources import files
 
 from fastapi.testclient import TestClient
 
 from notifyhub.store import Store, redact_secret_text
+
+
+def test_login_page_does_not_prefill_admin_username():
+    html = files("notifyhub").joinpath("static/index.html").read_text(encoding="utf-8")
+    script = files("notifyhub").joinpath("static/app.js").read_text(encoding="utf-8")
+
+    assert '<input name="username" autocomplete="username" required>' in html
+    assert "form.elements.username.value" not in script
 
 
 def test_admin_login_returns_plaintext_config_and_can_queue_channel_test(tmp_path, monkeypatch):

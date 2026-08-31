@@ -107,28 +107,8 @@ class Store:
                 json.dumps({"template": default_templates()}, ensure_ascii=False, indent=2) + "\n",
                 encoding="utf-8",
             )
-        else:
-            self._merge_default_templates()
         self.config_path.chmod(0o600)
         self.templates_path.chmod(0o600)
-
-    def _merge_default_templates(self):
-        try:
-            payload = json.loads(self.templates_path.read_text(encoding="utf-8"))
-        except (OSError, json.JSONDecodeError):
-            return
-        if not isinstance(payload, dict) or not isinstance(payload.get("template"), list):
-            return
-        existing = payload["template"]
-        names = {item.get("name") for item in existing if isinstance(item, dict)}
-        additions = [item for item in default_templates() if item.get("name") not in names]
-        if not additions:
-            return
-        payload["template"] = [*existing, *additions]
-        temporary = self.templates_path.with_suffix(".json.tmp")
-        temporary.write_text(json.dumps(payload, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
-        shutil.copy2(self.templates_path, self.templates_path.with_suffix(".json.bak"))
-        temporary.replace(self.templates_path)
 
     def connect(self):
         db = sqlite3.connect(self.db_path, timeout=10)

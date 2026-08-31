@@ -47,8 +47,8 @@ All three service adapters select the route's existing bound Jinja template and 
 
 The bundled Emby, PVE, and Watchtower templates are stored in
 `src/notifyhub/emby_templates.json`. A fresh data volume is seeded with the
-pack automatically. On startup, an existing `notify_template.json` is merged
-with any missing built-in templates without replacing custom templates.
+pack automatically. An existing `notify_template.json` is left unchanged on
+startup, including templates an administrator has edited or deleted.
 
 The built-in Emby pack covers playback start/stop and movie/series library additions. PVE backup/pruning/garbage-collection and Watchtower update/error/start events are also included.
 

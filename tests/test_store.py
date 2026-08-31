@@ -100,7 +100,7 @@ def test_config_rejects_routes_with_missing_channels(tmp_path):
         raise AssertionError("invalid config was saved")
 
 
-def test_existing_template_file_is_merged_without_overwriting_custom_values(tmp_path):
+def test_existing_template_file_is_left_unchanged_on_startup(tmp_path):
     conf_dir = tmp_path / "conf"
     conf_dir.mkdir()
     custom = {"name": "emby_playback_start", "type": "Emby.PlaybackStart", "title": "自定义", "content": "保留"}
@@ -108,12 +108,9 @@ def test_existing_template_file_is_merged_without_overwriting_custom_values(tmp_
 
     store = Store(tmp_path)
 
-    templates = store.templates
-    assert len(templates) == 10
-    assert next(item for item in templates if item["name"] == custom["name"]) == custom
-    assert {item["type"] for item in templates} >= {"PVE.Backup", "Watchtower.Update"}
-    assert (conf_dir / "notify_template.json.bak").exists()
-    assert len(Store(tmp_path).templates) == 10
+    assert store.templates == [custom]
+    assert not (conf_dir / "notify_template.json.bak").exists()
+    assert Store(tmp_path).templates == [custom]
 
 
 def test_processing_delivery_is_recovered_after_restart(tmp_path):

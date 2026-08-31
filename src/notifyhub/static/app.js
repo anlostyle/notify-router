@@ -208,7 +208,7 @@ function showLogin() {
   clearInterval(state.logTimer)
   $('#app').hidden = true
   $('#login-view').hidden = false
-  setTimeout(() => $('#login-form input[name="password"]')?.focus(), 40)
+  setTimeout(() => $('#login-form input[name="username"]')?.focus(), 40)
 }
 
 async function showApp(session) {
@@ -923,7 +923,6 @@ $('#login-form').addEventListener('submit', async event => {
     const data = new FormData(form)
     const session = await api('/api/admin/login', { method: 'POST', body: JSON.stringify({ username: data.get('username'), password: data.get('password') }) })
     form.reset()
-    form.elements.username.value = session.username || 'admin'
     await showApp(session)
   } catch (reason) {
     error.textContent = reason.message

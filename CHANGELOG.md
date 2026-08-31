@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.6.11 - 2026-08-31
+
+- Seed built-in notification templates only for fresh data volumes, preserving later user edits and deletions across restarts.
+- Leave the login username field empty instead of prefilling `admin`.
+
 ## 0.6.10 - 2026-08-30
 
 - Group registered template event types by module in the event selector, with Chinese labels and a custom-event option.
