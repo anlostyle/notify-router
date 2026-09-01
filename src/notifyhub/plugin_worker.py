@@ -19,6 +19,13 @@ from .store import Store, enabled
 logger = logging.getLogger("notifyhub.plugin-worker")
 
 
+if not logging.getLogger().handlers:
+    logging.basicConfig(
+        level=os.environ.get("LOG_LEVEL", "INFO").upper(),
+        format="%(asctime)s %(levelname)s %(name)s %(message)s",
+    )
+
+
 def create_worker(plugin_dir, data_dir):
     plugin_dir = Path(plugin_dir)
     data_dir = Path(data_dir)
