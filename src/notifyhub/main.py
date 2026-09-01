@@ -692,7 +692,12 @@ def test_channel(channel_name: str, payload: TestNotification):
 
 @app.get("/api/admin/export", dependencies=[Depends(admin_auth)])
 def export_config():
-    return {"version": 1, "config": store.config, "templates": {"template": store.templates}}
+    return {
+        "version": 1,
+        "config": store.config,
+        "templates": {"template": store.templates},
+        "plugins": store.list_plugin_configs(),
+    }
 
 
 @app.put("/api/admin/import", dependencies=[Depends(admin_auth)])
@@ -701,11 +706,25 @@ def import_config(payload: dict = Body(...)):
     templates = payload.get("templates")
     if not isinstance(config, dict) or not isinstance(templates, dict):
         raise HTTPException(400, "导入文件必须包含 config 和 templates")
+    plugins = payload.get("plugins")
+    try:
+        Store.validate_config(config)
+        Store.validate_templates(templates)
+        Store.validate_plugin_configs(plugins)
+    except ValueError as exc:
+        raise HTTPException(400, str(exc)) from exc
+    original_config = store.config_path.read_bytes()
+    original_templates = store.templates_path.read_bytes()
     try:
         store.save_config(config)
         store.save_templates(templates)
-    except ValueError as exc:
-        raise HTTPException(400, str(exc)) from exc
+        store.save_plugin_configs(plugins)
+    except Exception:
+        # Both files are restored if a later write fails, so an import cannot
+        # leave the instance with only half of the uploaded bundle applied.
+        store.config_path.write_bytes(original_config)
+        store.templates_path.write_bytes(original_templates)
+        raise
     return {"code": 0, "message": "imported"}
 
 
