@@ -12,6 +12,7 @@ from importlib.resources import files
 from pathlib import Path
 from zoneinfo import ZoneInfo
 
+from jinja2 import meta
 from jinja2.sandbox import SandboxedEnvironment
 
 
@@ -338,6 +339,15 @@ class Store:
             return _normalise_config(json.loads(self.config_path.read_text(encoding="utf-8")))
 
     def save_config(self, config):
+        self.validate_config(config)
+        with self._config_lock:
+            temp = self.config_path.with_suffix(".json.tmp")
+            temp.write_text(json.dumps(config, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+            shutil.copy2(self.config_path, self.config_path.with_suffix(".json.bak"))
+            temp.replace(self.config_path)
+
+    @staticmethod
+    def validate_config(config):
         if not isinstance(config, dict) or not isinstance(config.get("app"), dict) or not isinstance(config.get("channels"), list) or not isinstance(config.get("routes"), list):
             raise ValueError("config must contain app, channels and routes")
         _normalise_config(config)
@@ -347,14 +357,11 @@ class Store:
             raise ValueError("channel names must be present and unique")
         if len(route_ids) != len(config["routes"]) or None in route_ids or len(route_ids) != len(set(route_ids)):
             raise ValueError("route ids must be present and unique")
-        missing = {name for route in config["routes"] for name in (route.get("channel_name") or []) if name not in set(channel_names)}
+        channel_names = set(channel_names)
+        missing = {name for route in config["routes"] for name in (route.get("channel_name") or []) if name not in channel_names}
         if missing:
             raise ValueError(f"routes reference missing channels: {sorted(missing)}")
-        with self._config_lock:
-            temp = self.config_path.with_suffix(".json.tmp")
-            temp.write_text(json.dumps(config, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
-            shutil.copy2(self.config_path, self.config_path.with_suffix(".json.bak"))
-            temp.replace(self.config_path)
+        return True
 
     @property
     def channels(self):
@@ -369,16 +376,38 @@ class Store:
         return json.loads(self.templates_path.read_text(encoding="utf-8")).get("template", [])
 
     def save_templates(self, payload):
-        if not isinstance(payload, dict) or not isinstance(payload.get("template"), list):
-            raise ValueError("templates must contain a template list")
-        names = [x.get("name") for x in payload["template"] if isinstance(x, dict)]
-        if len(names) != len(payload["template"]) or None in names or len(names) != len(set(names)):
-            raise ValueError("template names must be present and unique")
+        self.validate_templates(payload)
         with self._config_lock:
             temp = self.templates_path.with_suffix(".json.tmp")
             temp.write_text(json.dumps(payload, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
             shutil.copy2(self.templates_path, self.templates_path.with_suffix(".json.bak"))
             temp.replace(self.templates_path)
+
+    @classmethod
+    def validate_templates(cls, payload):
+        if not isinstance(payload, dict) or not isinstance(payload.get("template"), list):
+            raise ValueError("templates must contain a template list")
+        names = [x.get("name") for x in payload["template"] if isinstance(x, dict)]
+        if len(names) != len(payload["template"]) or None in names or len(names) != len(set(names)):
+            raise ValueError("template names must be present and unique")
+        for template in payload["template"]:
+            cls.validate_template(template)
+        return True
+
+    @staticmethod
+    def validate_template(template):
+        if not isinstance(template, dict):
+            raise ValueError("each template must be an object")
+        for field in ("title", "content"):
+            source = str(template.get(field) or "")
+            try:
+                parsed = _jinja.parse(source)
+            except Exception as exc:
+                raise ValueError(f"template {template.get('name') or 'unnamed'} {field} has invalid Jinja syntax: {exc}") from exc
+            # The parser deliberately reports undeclared names only; runtime
+            # values may come from plugins, so unknown names are not rejected.
+            meta.find_undeclared_variables(parsed)
+        return True
 
     def render_event(self, route, template_type, context):
         bound = set(_name_list(route.get("bind_template")))
@@ -600,9 +629,16 @@ class Store:
             "channel_states": latest_channels,
         }
 
-    def delivery_status(self, limit=100, status=None):
-        where = "WHERE d.status=?" if status else ""
-        params = (status, limit) if status else (limit,)
+    def delivery_status(self, limit=100, status=None, route_id=None, channel_name=None, error=None, date_from=None, date_to=None):
+        clauses, params = [], []
+        if status: clauses.append("d.status=?"); params.append(status)
+        if route_id: clauses.append("o.route_id=?"); params.append(route_id)
+        if channel_name: clauses.append("d.channel_name=?"); params.append(channel_name)
+        if error: clauses.append("COALESCE(d.last_error, '') LIKE ?"); params.append(f"%{error}%")
+        if date_from: clauses.append("substr(o.created_at, 1, 10)>=?"); params.append(date_from)
+        if date_to: clauses.append("substr(o.created_at, 1, 10)<=?"); params.append(date_to)
+        where = f"WHERE {' AND '.join(clauses)}" if clauses else ""
+        params.append(limit)
         with self.connect() as db:
             return [
                 {**dict(x), "last_error": redact_secret_text(x["last_error"])}
@@ -750,3 +786,67 @@ class Store:
                      updated_at=excluded.updated_at""",
                 (plugin_id, plugin_name, payload, int(bool(status)), now, now),
             )
+
+    def list_plugin_configs(self):
+        with self.connect() as db:
+            rows = [dict(row) for row in db.execute("SELECT plugin_id, plugin_name, config, status FROM plugins ORDER BY plugin_id")]
+        result = []
+        for row in rows:
+            try:
+                config = json.loads(row["config"] or "{}")
+            except (json.JSONDecodeError, TypeError):
+                try:
+                    config = ast.literal_eval(row["config"] or "{}")
+                except (ValueError, SyntaxError):
+                    config = {}
+            result.append(
+                {
+                    "plugin_id": row["plugin_id"],
+                    "plugin_name": row["plugin_name"],
+                    "config": config if isinstance(config, dict) else {},
+                    "status": int(row["status"]),
+                }
+            )
+        return result
+
+    @staticmethod
+    def validate_plugin_configs(configs):
+        if configs is None:
+            return True
+        if not isinstance(configs, list):
+            raise ValueError("plugins must be a list")
+        plugin_ids = [item.get("plugin_id") for item in configs if isinstance(item, dict)]
+        plugin_names = [item.get("plugin_name") for item in configs if isinstance(item, dict)]
+        if len(plugin_ids) != len(configs) or any(not value for value in plugin_ids) or len(plugin_ids) != len(set(plugin_ids)):
+            raise ValueError("plugin ids must be present and unique")
+        if any(not value for value in plugin_names) or len(plugin_names) != len(set(plugin_names)):
+            raise ValueError("plugin names must be present and unique")
+        if any(not isinstance(item.get("config"), dict) for item in configs):
+            raise ValueError("plugin config must be an object")
+        return True
+
+    def save_plugin_configs(self, configs):
+        self.validate_plugin_configs(configs)
+        if configs is None:
+            return
+        now = localnow()
+        with self.connect() as db:
+            for item in configs:
+                db.execute(
+                    """INSERT INTO plugins
+                       (plugin_id, plugin_name, config, status, created_at, updated_at)
+                       VALUES (?, ?, ?, ?, ?, ?)
+                       ON CONFLICT(plugin_id) DO UPDATE SET
+                         plugin_name=excluded.plugin_name,
+                         config=excluded.config,
+                         status=excluded.status,
+                         updated_at=excluded.updated_at""",
+                    (
+                        item["plugin_id"],
+                        item["plugin_name"],
+                        repr(item["config"]),
+                        int(bool(item.get("status", 1))),
+                        now,
+                        now,
+                    ),
+                )

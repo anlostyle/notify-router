@@ -1,70 +1,14 @@
 {
   "template": [
-    {
-      "name": "emby_playback_start",
-      "type": "Emby.PlaybackStart",
-      "title": "{{ notification_title }}",
-      "content": "{{ content }}"
-    },
-    {
-      "name": "emby_playback_end",
-      "type": "Emby.PlaybackEnd",
-      "title": "{{ notification_title }}",
-      "content": "{{ content }}"
-    },
-    {
-      "name": "emby_library_new_movie",
-      "type": "Emby.LibraryNewMovie",
-      "title": "{{ notification_title }}",
-      "content": "{{ content }}"
-    },
-    {
-      "name": "emby_library_new_series",
-      "type": "Emby.LibraryNewSeries",
-      "title": "{{ notification_title }}",
-      "content": "{{ content }}"
-    },
-    {
-      "name": "pve_backup",
-      "type": "PVE.Backup",
-      "description": "PVE 备份任务通知",
-      "title": "{{ machine_name }} 备份：{{ task_status }}",
-      "content": "任务类型：{{ task_type }}\n节点：{{ machine_name }}\n状态：{{ task_status }}\n总耗时：{{ total_time }}\n总大小：{{ total_size }}"
-    },
-    {
-      "name": "pve_pruning",
-      "type": "PVE.Pruning",
-      "description": "PVE 数据存储精简通知",
-      "title": "{{ machine_name }} 精简：{{ task_status }}",
-      "content": "任务类型：{{ task_type }}\n节点：{{ machine_name }}\n状态：{{ task_status }}\n数据存储：{{ datastore_name }}\n原始数据：{{ original_data_usage }}\n磁盘占用：{{ on_disk_usage }}\n去重系数：{{ deduplication_factor }}"
-    },
-    {
-      "name": "pve_garbage",
-      "type": "PVE.Garbage",
-      "description": "PVE 垃圾回收通知",
-      "title": "{{ machine_name }} 垃圾回收：{{ task_status }}",
-      "content": "任务类型：{{ task_type }}\n节点：{{ machine_name }}\n状态：{{ task_status }}\n数据存储：{{ datastore_name }}\n已移除垃圾：{{ removed_garbage }}\n原始数据：{{ original_data_usage }}\n磁盘占用：{{ on_disk_usage }}\n去重系数：{{ deduplication_factor }}"
-    },
-    {
-      "name": "watchtower_update",
-      "type": "Watchtower.Update",
-      "description": "Watchtower 镜像更新通知",
-      "title": "Watchtower 更新：{{ server_name }}",
-      "content": "更新镜像数：{{ updated_image_count }}\n{{ updated_image_list }}"
-    },
-    {
-      "name": "watchtower_error",
-      "type": "Watchtower.Error",
-      "description": "Watchtower 更新异常通知",
-      "title": "{{ update_title }}",
-      "content": "{{ update_content }}"
-    },
-    {
-      "name": "watchtower_start",
-      "type": "Watchtower.Start",
-      "description": "Watchtower 启动通知",
-      "title": "{{ update_title }}",
-      "content": "{{ update_content }}"
-    }
+    {"name": "emby_playback_start", "type": "Emby.PlaybackStart", "title": "{{ notification_title }}", "content": "{{ content }}"},
+    {"name": "emby_playback_end", "type": "Emby.PlaybackEnd", "title": "{{ notification_title }}", "content": "{{ content }}"},
+    {"name": "emby_library_new_movie", "type": "Emby.LibraryNewMovie", "title": "{{ notification_title }}", "content": "{{ content }}"},
+    {"name": "emby_library_new_series", "type": "Emby.LibraryNewSeries", "title": "{{ notification_title }}", "content": "{{ content }}"},
+    {"name": "pve_backup", "type": "PVE.Backup", "description": "PVE 备份任务通知", "title": "{{ machine_name }} 备份：{{ task_status }}", "content": "任务类型：{{ task_type }}\n节点：{{ machine_name }}\n状态：{{ task_status }}\n总耗时：{{ total_time }}\n总大小：{{ total_size }}"},
+    {"name": "pve_pruning", "type": "PVE.Pruning", "description": "PVE 数据存储精简通知", "title": "{{ machine_name }} 精简：{{ task_status }}", "content": "任务类型：{{ task_type }}\n节点：{{ machine_name }}\n状态：{{ task_status }}\n数据存储：{{ datastore_name }}\n原始数据：{{ original_data_usage }}\n磁盘占用：{{ on_disk_usage }}\n去重系数：{{ deduplication_factor }}"},
+    {"name": "pve_garbage", "type": "PVE.Garbage", "description": "PVE 垃圾回收通知", "title": "{{ machine_name }} 垃圾回收：{{ task_status }}", "content": "任务类型：{{ task_type }}\n节点：{{ machine_name }}\n状态：{{ task_status }}\n数据存储：{{ datastore_name }}\n已移除垃圾：{{ removed_garbage }}\n原始数据：{{ original_data_usage }}\n磁盘占用：{{ on_disk_usage }}\n去重系数：{{ deduplication_factor }}"},
+    {"name": "watchtower_update", "type": "Watchtower.Update", "description": "Watchtower 镜像更新通知", "title": "Watchtower 更新：{{ server_name }}", "content": "更新镜像数：{{ updated_image_count }}\n{{ updated_image_list }}"},
+    {"name": "watchtower_error", "type": "Watchtower.Error", "description": "Watchtower 更新异常通知", "title": "{{ update_title }}", "content": "{{ update_content }}"},
+    {"name": "watchtower_start", "type": "Watchtower.Start", "description": "Watchtower 启动通知", "title": "{{ update_title }}", "content": "{{ update_content }}"}
   ]
 }

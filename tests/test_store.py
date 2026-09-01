@@ -88,6 +88,28 @@ def test_plugin_config_reads_legacy_python_literal(tmp_path):
     assert store.get_plugin_config("legacy") == {"enabled": True, "items": ["a"]}
 
 
+def test_plugin_configs_can_be_exported_and_imported(tmp_path):
+    store = Store(tmp_path)
+    store.save_plugin_config("demo", "Demo", {"token": "value"}, status=0)
+    exported = store.list_plugin_configs()
+    assert exported == [{"plugin_id": "demo", "plugin_name": "Demo", "config": {"token": "value"}, "status": 0}]
+
+    store.save_plugin_configs([{"plugin_id": "other", "plugin_name": "Other", "config": {"enabled": True}, "status": 1}])
+    assert store.get_plugin_config("other") == {"enabled": True}
+
+
+def test_template_validation_rejects_invalid_jinja_before_save(tmp_path):
+    store = Store(tmp_path)
+    original = store.templates
+    try:
+        store.save_templates({"template": [{"name": "broken", "type": "Custom.Alert", "title": "{% invalid", "content": ""}]})
+    except ValueError as exc:
+        assert "invalid Jinja syntax" in str(exc)
+    else:
+        raise AssertionError("invalid template was saved")
+    assert store.templates == original
+
+
 def test_config_rejects_routes_with_missing_channels(tmp_path):
     store = Store(tmp_path)
     config = legacy_config()

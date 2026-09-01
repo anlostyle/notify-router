@@ -100,6 +100,7 @@ const state = {
   logs: [],
   query: '',
   deliveryStatus: '',
+  deliveryFilters: { route_id: '', channel_name: '', error: '', date_from: '', date_to: '' },
   lastPage: '',
   modalSubmit: null,
   logTimer: null,
@@ -196,7 +197,46 @@ async function copyText(value) {
 function setTheme(theme) {
   document.documentElement.dataset.theme = theme
   localStorage.setItem('notify-theme', theme)
-  $('#theme-icon')?.setAttribute('href', theme === 'dark' ? '#i-sun' : '#i-moon')
+  const icon = theme === 'dark' ? '#i-sun' : '#i-moon'
+  $('#theme-icon')?.setAttribute('href', icon)
+  $('#login-theme-icon')?.setAttribute('href', icon)
+}
+
+const PALETTES = [
+  ['靛蓝', '#4f46e5', '#3730a3'], ['海蓝', '#2563eb', '#1d4ed8'],
+  ['青色', '#0891b2', '#0e7490'], ['翡翠', '#059669', '#047857'],
+  ['琥珀', '#d97706', '#b45309'], ['珊瑚', '#ea580c', '#c2410c'],
+  ['玫红', '#e11d48', '#be123c'], ['紫罗兰', '#7c3aed', '#6d28d9'],
+  ['洋红', '#c026d3', '#a21caf'], ['蓝灰', '#64748b', '#475569'],
+]
+
+function setPalette(index) {
+  index = PALETTES[index] ? index : 7
+  const item = PALETTES[index]
+  document.documentElement.style.setProperty('--primary', item[1])
+  document.documentElement.style.setProperty('--primary-strong', item[2])
+  document.documentElement.style.setProperty('--primary-soft', `${item[1]}26`)
+  document.documentElement.style.setProperty('--primary-grad', `linear-gradient(180deg, ${item[1]}, ${item[2]})`)
+  document.documentElement.style.setProperty('--nav-active-bg', `${item[1]}26`)
+  document.documentElement.style.setProperty('--nav-active-text', item[1])
+  document.documentElement.style.setProperty('--nav-badge-bg', `${item[1]}20`)
+  document.documentElement.style.setProperty('--nav-badge-text', item[1])
+  document.querySelectorAll('.brand-mark').forEach(node => { node.style.background = `linear-gradient(145deg, ${item[1]}, ${item[2]})` })
+  localStorage.setItem('notify-palette', String(index))
+}
+
+function togglePaletteMenu(button) {
+  const existing = $('#palette-menu')
+  if (existing) return existing.remove()
+  const selected = Number(localStorage.getItem('notify-palette') || 7)
+  const menu = document.createElement('div')
+  menu.id = 'palette-menu'
+  menu.className = 'palette-menu'
+  menu.innerHTML = PALETTES.map((item, index) => `<button class="palette-item ${index === selected ? 'active' : ''}" data-palette="${index}"><i class="palette-dot" style="background:${item[1]}"></i>${item[0]}</button>`).join('')
+  document.body.append(menu)
+  const rect = button.getBoundingClientRect()
+  menu.style.top = `${Math.min(rect.bottom + 8, window.innerHeight - menu.offsetHeight - 12)}px`
+  menu.style.right = `${Math.max(12, window.innerWidth - rect.right)}px`
 }
 
 function currentPage() {
@@ -208,6 +248,7 @@ function showLogin() {
   clearInterval(state.logTimer)
   $('#app').hidden = true
   $('#login-view').hidden = false
+  document.body.classList.remove('auth-pending')
   setTimeout(() => $('#login-form input[name="username"]')?.focus(), 40)
 }
 
@@ -215,6 +256,7 @@ async function showApp(session) {
   state.session = session
   $('#login-view').hidden = true
   $('#app').hidden = false
+  document.body.classList.remove('auth-pending')
   $('#username').textContent = session.username || 'admin'
   $('#user-avatar').textContent = (session.username || 'A').slice(0, 1).toUpperCase()
   await loadCore()
@@ -255,7 +297,7 @@ function setPageActions(page) {
     deliveries: `<button class="button secondary" data-action="refresh" aria-label="刷新">${icon('refresh')}<span>刷新</span></button>`,
     logs: `<button class="button secondary" data-action="refresh" aria-label="刷新">${icon('refresh')}<span>刷新</span></button>`,
     plugins: `<button class="button secondary" data-action="manage-plugin-sources" aria-label="管理插件源">${icon('settings')}<span>插件源</span></button>`,
-    settings: `<button class="button primary" data-action="edit-settings" aria-label="编辑设置">${icon('edit')}<span>编辑设置</span></button>`,
+    settings: `<button class="button secondary" data-action="export-config" aria-label="导出配置">${icon('download')}<span>导出</span></button><button class="button secondary" data-action="import-config" aria-label="导入配置">${icon('upload')}<span>导入</span></button><button class="button primary" data-action="edit-settings" aria-label="编辑设置">${icon('edit')}<span>编辑设置</span></button>`,
   }
   $('#page-actions').innerHTML = actions[page] || ''
 }
@@ -279,7 +321,8 @@ async function renderPage() {
 
   if (page === 'deliveries') {
     $('#page-content').innerHTML = '<div class="skeleton"></div>'
-    const suffix = state.deliveryStatus ? `&status=${encodeURIComponent(state.deliveryStatus)}` : ''
+    const filters = { ...state.deliveryFilters, status: state.deliveryStatus }
+    const suffix = Object.entries(filters).filter(([, value]) => value).map(([key, value]) => `&${key}=${encodeURIComponent(value)}`).join('')
     state.deliveries = await api(`/api/admin/deliveries?limit=300${suffix}`)
   }
   if (page === 'logs') {
@@ -442,7 +485,8 @@ function loadPluginStore() {
 
 function renderDeliveries() {
   const deliveries = state.deliveries.filter(item => matches(item.title, item.content, item.route_name, item.channel_name, item.last_error))
-  const toolbar = `<div class="toolbar"><select id="delivery-status" class="filter-select"><option value="">全部状态</option>${['sent', 'failed', 'retry', 'pending', 'processing'].map(status => `<option value="${status}" ${state.deliveryStatus === status ? 'selected' : ''}>${statusText(status)}</option>`).join('')}</select><span class="tag">共 ${deliveries.length} 条</span></div>`
+  const filter = (key, placeholder) => `<input class="filter-input delivery-filter" data-filter="${key}" value="${escapeHtml(state.deliveryFilters[key])}" placeholder="${placeholder}">`
+  const toolbar = `<div class="toolbar"><select id="delivery-status" class="filter-select"><option value="">全部状态</option>${['sent', 'failed', 'retry', 'pending', 'processing'].map(status => `<option value="${status}" ${state.deliveryStatus === status ? 'selected' : ''}>${statusText(status)}</option>`).join('')}</select>${filter('route_id', '路由 ID')}${filter('channel_name', '渠道名称')}${filter('error', '失败原因')}<input type="date" class="filter-input delivery-filter" data-filter="date_from" value="${state.deliveryFilters.date_from}"><input type="date" class="filter-input delivery-filter" data-filter="date_to" value="${state.deliveryFilters.date_to}"><span class="tag">共 ${deliveries.length} 条</span></div>`
   if (!deliveries.length) return toolbar + emptyState('history', state.query ? '没有匹配的投递记录' : '暂无投递记录', '新通知进入队列后会显示在这里')
   return `${toolbar}<div class="table-wrap"><table class="data-table"><thead><tr><th>消息</th><th>通道 → 渠道</th><th>状态</th><th>尝试</th><th>时间</th><th>操作</th></tr></thead><tbody>${deliveries.map(item => `
     <tr><td data-label="消息"><div class="cell-title"><strong class="truncate">${escapeHtml(item.title || '无标题')}</strong><small class="truncate">${escapeHtml(item.content || '')}</small></div></td><td data-label="投递链路">${escapeHtml(item.route_name)} → ${escapeHtml(item.channel_name)}</td><td data-label="状态"><span class="status-badge ${escapeHtml(item.status)}">${escapeHtml(statusText(item.status))}</span></td><td data-label="尝试">${escapeHtml(item.attempts || 0)}</td><td data-label="时间">${escapeHtml(formatDate(item.updated_at || item.outbox_created_at))}</td><td data-label="操作"><div class="inline-actions"><button class="icon-button" data-action="delivery-detail" data-id="${item.id}" aria-label="查看详情">${icon('more')}</button>${item.status === 'failed' ? `<button class="icon-button" data-action="retry-delivery" data-id="${item.id}" aria-label="重试">${icon('refresh')}</button>` : ''}</div></td></tr>`).join('')}</tbody></table></div>`
@@ -604,6 +648,37 @@ function openTemplateForm(template = null) {
   const selectedType = original.type || DEFAULT_TEMPLATE_TYPE
   const knownType = selectedType === DEFAULT_TEMPLATE_TYPE || state.eventTypes.some(item => item.value === selectedType)
   const typeOptions = templateEventOptions(selectedType)
+  const embyBaseVariables = ['notification_title', 'content', 'event_code', 'event_label', 'event', 'username', 'user', 'user_data', 'item', 'item_data', 'item_type', 'session', 'session_data', 'server', 'server_data', 'payload', 'server_name', 'server_id', 'server_version', 'server_info', 'server_url', 'date', 'date_text', 'remote_ip', 'location', 'address_info', 'client', 'client_version', 'device', 'device_name', 'device_info', 'device_play_info', 'item_url', 'image_url', 'emby_url', 'created_at']
+  const embyItemVariables = ['item_type_name', 'item_name', 'title', 'year', 'year_label', 'premiere_date', 'premiere_text', 'score_origin', 'official_rating', 'score_text', 'genres', 'genres_text', 'people', 'people_text', 'overview', 'overview_text', 'container', 'size', 'media_info', 'film_info', 'album_info']
+  const embyPlaybackVariables = ['playback', 'playback_data', 'play_state', 'play_method', 'volume', 'position_seconds', 'runtime_seconds', 'position', 'runtime', 'progress_bar', 'progress_text', 'video_stream_title', 'transcoding_info', 'bitrate', 'current_cpu']
+  const embyVariables = [...embyBaseVariables, ...embyItemVariables]
+  const variableGroups = {
+    'Emby.PlaybackStart': [...embyVariables, ...embyPlaybackVariables],
+    'Emby.PlaybackPause': [...embyVariables, ...embyPlaybackVariables],
+    'Emby.PlaybackUnpause': [...embyVariables, ...embyPlaybackVariables],
+    'Emby.PlaybackEnd': [...embyVariables, ...embyPlaybackVariables],
+    'Emby.LibraryNewMovie': [...embyVariables, 'episode_count'],
+    'Emby.LibraryNewSeries': [...embyVariables, 'episode_count'],
+    'Emby.LibraryNewAudio': [...embyVariables],
+    'Emby.LibraryDeleted': [...embyVariables, 'item_path', 'path_text'],
+    'Emby.UserAuthenticated': [...embyBaseVariables],
+    'Emby.UserAuthenticationFailed': [...embyBaseVariables],
+    'Emby.PluginInstalled': [...embyBaseVariables, 'plugin_name', 'plugin_version', 'plugin_info', 'plugin_version_text'],
+    'Emby.PluginUninstalled': [...embyBaseVariables, 'plugin_name', 'plugin_version', 'plugin_info', 'plugin_version_text'],
+    'Emby.IntroskipUpdate': [...embyVariables],
+    'Emby.ItemMarkedPlayed': [...embyVariables, 'is_favorite'],
+    'Emby.ItemMarkedUnplayed': [...embyVariables, 'is_favorite'],
+    'Emby.ItemRated': [...embyVariables, 'is_favorite'],
+    'Emby.SystemStartup': [...embyBaseVariables],
+    'Emby.SystemUpdateAvailable': [...embyBaseVariables, 'new_version', 'current_version_text', 'new_version_text'],
+  }
+  const examples = { notification_title: '用户开始播放：示例电影', content: '媒体库：电影 · 设备：手机', event_code: 'playback.start', event_label: '开始播放', event: '开始播放', username: '用户', user: '用户', title: '示例电影', item_name: '示例电影', item_type_name: '电影', item_type: 'Movie', year: '2025', year_label: '(2025)', genres: '剧情、科幻', genres_text: '剧情·科幻', overview: '这是一段示例简介。', server_name: '家庭影院', server_version: '4.8.0', device: '手机客户端', device_name: '手机客户端', client: 'Emby', size: '2 GB', container: 'H264', bitrate: '8', progress_text: '进度：50%', position: '00:30:00', runtime: '01:00:00', play_method: '直接播放', media_info: '媒体：H264', machine_name: 'PVE节点', task_type: '备份', task_status: '成功', datastore_name: 'local', total_time: '3秒', total_size: '1 GB', job_id: 'daily', removed_garbage: '200 MB', update_title: 'Watchtower 更新', update_content: '发现 1 个镜像更新', updated_image_count: '1', updated_image_list: 'example/app:latest' }
+  const variablesForType = type => {
+    if (variableGroups[type]) return variableGroups[type]
+    if (String(type).startsWith('PVE.')) return ['machine_name', 'task_type', 'task_status', 'datastore_name', 'total_time', 'total_size', 'job_id', 'details', 'index_file_count', 'removed_garbage', 'original_data_usage', 'on_disk_usage', 'deduplication_factor']
+    if (String(type).startsWith('Watchtower.')) return ['update_title', 'update_content', 'server_name', 'updated_image_count', 'updated_image_list']
+    return ['notification_title', 'content', 'event_code', 'event_label', 'event', 'payload']
+  }
   openModal({
     eyebrow: template ? '编辑通知模板' : '新增通知模板', title: template ? original.name : '创建通知模板', wide: true,
     body: `<div class="dialog-grid"><div><div class="field-row">${formField('name', '模板名称', 'text', original.name, '例如：短信通知')}<label class="field"><span>事件类型</span><select name="type_choice">${typeOptions}<option value="__custom__" ${knownType ? '' : 'selected'}>自定义事件类型</option></select><input name="type_custom" type="text" value="${escapeHtml(knownType ? '' : original.type)}" placeholder="例如：MyService.Alert" autocomplete="off" ${knownType ? 'hidden' : ''}><small>内置事件按模块分组显示；也可以选择“自定义事件类型”手动输入。</small></label></div>${formField('description', '模板说明', 'text', original.description || '', '说明这个模板的使用场景')}${formField('title', '通知标题', 'textarea', original.title || '')}${formField('content', '通知内容', 'textarea', original.content || '')}<p class="form-note">保持现有 Jinja 模板变量不变，例如 <code>{{ device_name }}</code>。变量由实际推送来源填充。</p></div><aside class="preview-pane"><p class="eyebrow">News 实时预览</p><div class="news-preview"><div class="news-image">${icon('bell')}</div><div class="news-copy"><h3 id="preview-title">${escapeHtml(original.title || '通知标题')}</h3><p id="preview-content">${escapeHtml(original.content || '通知内容')}</p></div></div><p class="preview-note">这是企业微信 News 卡片的内容结构预览；图片和链接来自通道或推送请求。</p></aside></div>`,
@@ -627,14 +702,47 @@ function openTemplateForm(template = null) {
   })
   const typeChoice = $('#modal-body select[name="type_choice"]')
   const customType = $('#modal-body input[name="type_custom"]')
+  const variableHost = Object.assign(document.createElement('div'), { className: 'template-variable-host' })
+  $('#modal-body .field-row').after(variableHost)
+  let activeEditor = $('#modal-body textarea[name="content"]')
+  let activeSelection = { start: activeEditor.selectionStart || 0, end: activeEditor.selectionEnd || 0 }
+  const refreshVariableHelper = type => {
+    const variableNames = variablesForType(type)
+    variableHost.innerHTML = `<div class="variable-helper"><div class="helper-heading"><strong>可用变量</strong><small>点击插入到当前编辑框 · ${escapeHtml(type || '自定义事件')}</small></div><div class="variable-list">${variableNames.map(name => `<button type="button" class="variable-chip" data-variable="${escapeHtml(name)}">{{ ${escapeHtml(name)} }}</button>`).join('')}</div></div>`
+    variableHost.querySelectorAll('[data-variable]').forEach(button => button.addEventListener('click', () => {
+      const field = activeEditor || $('#modal-body textarea[name="content"]')
+      const value = `{{ ${button.dataset.variable} }}`
+      const start = activeEditor === field ? activeSelection.start : field.value.length
+      const end = activeEditor === field ? activeSelection.end : start
+      field.value = field.value.slice(0, start) + value + field.value.slice(end)
+      field.focus(); field.selectionStart = field.selectionEnd = start + value.length
+      activeSelection = { start: start + value.length, end: start + value.length }
+      field.dispatchEvent(new Event('input'))
+    }))
+  }
+  const trackEditor = event => {
+    activeEditor = event.currentTarget
+    activeSelection = { start: activeEditor.selectionStart || 0, end: activeEditor.selectionEnd || 0 }
+  }
+  $('#modal-body').querySelectorAll('textarea[name="title"], textarea[name="content"]').forEach(field => {
+    field.addEventListener('focus', trackEditor)
+    field.addEventListener('select', trackEditor)
+    field.addEventListener('click', trackEditor)
+    field.addEventListener('input', trackEditor)
+    field.addEventListener('keyup', trackEditor)
+  })
+  refreshVariableHelper(typeChoice.value === '__custom__' ? customType.value : typeChoice.value)
   typeChoice.addEventListener('change', () => {
     const custom = typeChoice.value === '__custom__'
     customType.hidden = !custom
     if (!custom && typeChoice.value) customType.value = typeChoice.value
+    refreshVariableHelper(custom ? customType.value : typeChoice.value)
   })
+  customType.addEventListener('input', () => refreshVariableHelper(customType.value))
+  const renderExample = value => String(value || '').replace(/{{\s*([A-Za-z_]\w*(?:\.[A-Za-z_]\w*)*)\s*}}/g, (_, name) => examples[name] ?? `{{ ${name} }}`).replace(/{%[^%]*%}/g, '')
   const updatePreview = () => {
-    $('#preview-title').textContent = $('#modal-body [name="title"]').value || '通知标题'
-    $('#preview-content').textContent = $('#modal-body [name="content"]').value || '通知内容'
+    $('#preview-title').textContent = renderExample($('#modal-body [name="title"]').value) || '通知标题'
+    $('#preview-content').textContent = renderExample($('#modal-body [name="content"]').value) || '通知内容'
   }
   $('#modal-body [name="title"]').addEventListener('input', updatePreview)
   $('#modal-body [name="content"]').addEventListener('input', updatePreview)
@@ -776,8 +884,8 @@ function openTestChannel(channel) {
     submitText: '发送测试',
     onSubmit: async form => {
       const data = new FormData(form)
-      await api(`/api/admin/channels/${encodeURIComponent(channel.name)}/test`, { method: 'POST', body: JSON.stringify({ title: data.get('title'), content: data.get('content'), push_img_url: data.get('push_img_url') || null, push_link_url: data.get('push_link_url') || null }) })
-      toast('测试通知已进入发送队列')
+      const result = await api(`/api/admin/channels/${encodeURIComponent(channel.name)}/test`, { method: 'POST', body: JSON.stringify({ title: data.get('title'), content: data.get('content'), push_img_url: data.get('push_img_url') || null, push_link_url: data.get('push_link_url') || null, probe: true }) })
+      toast(`连接成功 · ${result.elapsed_ms} ms`)
       closeModal()
       setTimeout(async () => { await loadCore(); if (currentPage() === 'channels') renderCurrent() }, 1200)
     },
@@ -845,6 +953,17 @@ async function handleAction(action, target) {
   if (action === 'close-menu') return closeMobileMenu()
   if (action === 'close-modal') return closeModal()
   if (action === 'toggle-theme') return setTheme(document.documentElement.dataset.theme === 'dark' ? 'light' : 'dark')
+  if (action === 'toggle-palette') return togglePaletteMenu(target)
+  if (action === 'restart-service') return confirmModal('重启 Notify Router', '确定要重启服务吗？当前通知会在服务恢复后继续处理。', async () => {
+    await api('/api/admin/restart', { method: 'POST' })
+    toast('服务正在重启', '页面将在服务恢复后自动刷新')
+    await delay(1200)
+    for (let attempt = 0; attempt < 30; attempt += 1) {
+      try { if ((await fetch('/healthz', { cache: 'no-store' })).ok) return location.reload() } catch {}
+      await delay(1000)
+    }
+    location.reload()
+  })
   if (action === 'user-menu') { $('#user-menu').hidden = !$('#user-menu').hidden; return }
   if (action === 'logout') {
     await api('/api/admin/logout', { method: 'POST' })
@@ -869,7 +988,9 @@ async function handleAction(action, target) {
   if (action === 'edit-route') return openRouteForm((state.config.routes || []).find(item => item.route_id === target.dataset.id))
   if (action === 'delete-route') {
     const route = state.config.routes.find(item => item.route_id === target.dataset.id)
-    return confirmModal('删除通知通道', `确定删除“${route.route_name}”吗？现有调用地址将立即失效。`, async () => saveConfig({ ...state.config, routes: state.config.routes.filter(item => item.route_id !== route.route_id) }, '通道已删除'), true)
+    const base = (state.config.app?.site_url || location.origin).replace(/\/$/, '')
+    const endpoint = `${base}/api/service/notify/${encodeURIComponent(route.route_id)}/{title}/{content}`
+    return confirmModal('删除通知通道', `确定删除“${route.route_name}”吗？现有调用地址将立即失效。\n\n调用地址：${endpoint}`, async () => saveConfig({ ...state.config, routes: state.config.routes.filter(item => item.route_id !== route.route_id) }, '通道已删除'), true)
   }
   if (action === 'copy-route') {
     const base = (state.config.app?.site_url || location.origin).replace(/\/$/, '')
@@ -910,6 +1031,8 @@ async function handleAction(action, target) {
   }
   if (action === 'delivery-detail') return openDeliveryDetail(state.deliveries.find(item => String(item.id) === String(target.dataset.id)))
   if (action === 'edit-settings') return openSettingsForm()
+  if (action === 'export-config') { const data = await api('/api/admin/export'); const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' }); const link = document.createElement('a'); link.href = URL.createObjectURL(blob); link.download = 'notify-router-config.json'; link.click(); URL.revokeObjectURL(link.href); return toast('配置已导出') }
+  if (action === 'import-config') { const input = Object.assign(document.createElement('input'), { type: 'file', accept: '.json,application/json' }); input.onchange = async () => { try { const data = JSON.parse(await input.files[0].text()); await api('/api/admin/import', { method: 'PUT', body: JSON.stringify(data) }); toast('配置已导入，请刷新页面') } catch (error) { toast('配置导入失败', error.message, 'error') } }; input.click(); return }
 }
 
 $('#login-form').addEventListener('submit', async event => {
@@ -946,8 +1069,17 @@ $('#modal-form').addEventListener('submit', async event => {
 })
 
 document.addEventListener('click', async event => {
+  const palette = event.target.closest('[data-palette]')
+  if (palette) {
+    setPalette(Number(palette.dataset.palette))
+    $('#palette-menu')?.remove()
+    return
+  }
   const target = event.target.closest('[data-action]')
-  if (!target) return
+  if (!target) {
+    if (!event.target.closest('#palette-menu')) $('#palette-menu')?.remove()
+    return
+  }
   try { await handleAction(target.dataset.action, target) } catch (reason) { toast('操作失败', reason.message, 'error') }
 })
 
@@ -963,6 +1095,7 @@ document.addEventListener('change', event => {
     state.deliveryStatus = event.target.value
     renderPage().catch(reason => toast('加载失败', reason.message, 'error'))
   }
+  if (event.target.matches('.delivery-filter')) { state.deliveryFilters[event.target.dataset.filter] = event.target.value; renderPage().catch(reason => toast('加载失败', reason.message, 'error')) }
 })
 
 document.addEventListener('keydown', event => {
@@ -978,6 +1111,7 @@ window.addEventListener('hashchange', () => renderPage().catch(reason => toast('
 async function boot() {
   const preferred = localStorage.getItem('notify-theme') || (matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light')
   setTheme(preferred)
+  setPalette(Number(localStorage.getItem('notify-palette') || 7))
   try {
     const session = await api('/api/admin/session')
     if (session.authenticated) await showApp(session)

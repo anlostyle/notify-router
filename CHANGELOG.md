@@ -1,5 +1,10 @@
 # Changelog
 
+## Unreleased
+
+- Add CleanLLM-style theme palettes, per-event template variable helpers, delivery filters, connection probes, and configuration export/import.
+- Include plugin settings in configuration exports and validate imports before applying them.
+
 ## 0.6.11 - 2026-08-31
 
 - Seed built-in notification templates only for fresh data volumes, preserving later user edits and deletions across restarts.

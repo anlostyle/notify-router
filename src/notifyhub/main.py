@@ -16,6 +16,7 @@ from urllib.parse import quote
 
 import uvicorn
 import httpx
+from .channels import send
 from fastapi import Body, Cookie, Depends, FastAPI, Header, HTTPException, Request, Response
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.security import HTTPBasic, HTTPBasicCredentials
@@ -124,6 +125,7 @@ class TestNotification(BaseModel):
     content: str = "通知渠道连接正常。"
     push_img_url: str | None = None
     push_link_url: str | None = None
+    probe: bool = False
 
 
 class PluginSourcesRequest(BaseModel):
@@ -650,10 +652,10 @@ def records(limit: int = 100):
 
 
 @app.get("/api/admin/deliveries", dependencies=[Depends(admin_auth)])
-def deliveries(limit: int = 100, status: str | None = None):
+def deliveries(limit: int = 100, status: str | None = None, route_id: str | None = None, channel_name: str | None = None, error: str | None = None, date_from: str | None = None, date_to: str | None = None):
     if status not in {None, "pending", "processing", "retry", "sent", "failed"}:
         raise HTTPException(400, "invalid delivery status")
-    return store.delivery_status(max(1, min(limit, 500)), status)
+    return store.delivery_status(max(1, min(limit, 500)), status, route_id, channel_name, error, date_from, date_to)
 
 
 @app.post("/api/admin/deliveries/{delivery_id}/retry", dependencies=[Depends(admin_auth)])
@@ -665,6 +667,16 @@ def retry_delivery(delivery_id: int):
 
 @app.post("/api/admin/channels/{channel_name}/test", dependencies=[Depends(admin_auth)])
 def test_channel(channel_name: str, payload: TestNotification):
+    channel = store.channel(channel_name)
+    if not channel:
+        raise HTTPException(404, "channel not found")
+    if payload.probe:
+        started = time.perf_counter()
+        try:
+            send(channel, {"title": payload.title, "content": payload.content, "push_img_url": payload.push_img_url, "push_link_url": payload.push_link_url})
+            return {"code": 0, "message": "connection ok", "elapsed_ms": round((time.perf_counter() - started) * 1000), "status": 200}
+        except Exception as exc:
+            return JSONResponse({"code": 1, "message": "connection failed", "elapsed_ms": round((time.perf_counter() - started) * 1000), "error": redact_secret_text(exc)}, status_code=502)
     try:
         outbox_id = store.enqueue_channel(
             channel_name,
@@ -676,6 +688,44 @@ def test_channel(channel_name: str, payload: TestNotification):
     except KeyError as exc:
         raise HTTPException(404, "channel not found") from exc
     return {"code": 0, "message": "queued", "outbox_id": outbox_id}
+
+
+@app.get("/api/admin/export", dependencies=[Depends(admin_auth)])
+def export_config():
+    return {
+        "version": 1,
+        "config": store.config,
+        "templates": {"template": store.templates},
+        "plugins": store.list_plugin_configs(),
+    }
+
+
+@app.put("/api/admin/import", dependencies=[Depends(admin_auth)])
+def import_config(payload: dict = Body(...)):
+    config = payload.get("config")
+    templates = payload.get("templates")
+    if not isinstance(config, dict) or not isinstance(templates, dict):
+        raise HTTPException(400, "导入文件必须包含 config 和 templates")
+    plugins = payload.get("plugins")
+    try:
+        Store.validate_config(config)
+        Store.validate_templates(templates)
+        Store.validate_plugin_configs(plugins)
+    except ValueError as exc:
+        raise HTTPException(400, str(exc)) from exc
+    original_config = store.config_path.read_bytes()
+    original_templates = store.templates_path.read_bytes()
+    try:
+        store.save_config(config)
+        store.save_templates(templates)
+        store.save_plugin_configs(plugins)
+    except Exception:
+        # Both files are restored if a later write fails, so an import cannot
+        # leave the instance with only half of the uploaded bundle applied.
+        store.config_path.write_bytes(original_config)
+        store.templates_path.write_bytes(original_templates)
+        raise
+    return {"code": 0, "message": "imported"}
 
 
 @app.get("/api/admin/logs", dependencies=[Depends(admin_auth)])

@@ -47,6 +47,35 @@ def test_admin_login_returns_plaintext_config_and_can_queue_channel_test(tmp_pat
         client.close()
 
 
+def test_config_import_validates_before_mutating_and_exports_plugin_configs(tmp_path, monkeypatch):
+    monkeypatch.setenv("WORKDIR", str(tmp_path))
+    monkeypatch.setenv("NH_USER", "admin")
+    monkeypatch.setenv("NH_PASSWORD", "test-password")
+    main = importlib.import_module("notifyhub.main")
+    test_store = Store(tmp_path)
+    test_store.save_plugin_config("demo", "Demo", {"token": "value"})
+    original_config = test_store.config
+    monkeypatch.setattr(main, "store", test_store)
+    client = TestClient(main.app)
+    try:
+        assert client.post("/api/admin/login", json={"username": "admin", "password": "test-password"}).status_code == 200
+        exported = client.get("/api/admin/export")
+        assert exported.status_code == 200
+        assert exported.json()["plugins"] == [{"plugin_id": "demo", "plugin_name": "Demo", "config": {"token": "value"}, "status": 1}]
+
+        response = client.put(
+            "/api/admin/import",
+            json={
+                "config": {"app": {"app_name": "should-not-apply"}, "channels": [], "routes": []},
+                "templates": {"template": [{"name": "broken", "type": "Custom.Alert", "title": "{% invalid", "content": ""}]},
+            },
+        )
+        assert response.status_code == 400
+        assert test_store.config == original_config
+    finally:
+        client.close()
+
+
 def test_dashboard_stats_and_delivery_filter(tmp_path):
     store = Store(tmp_path)
     store.save_config(
