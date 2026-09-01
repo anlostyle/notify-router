@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.6.12 - 2026-09-01
 
 - Add CleanLLM-style theme palettes, per-event template variable helpers, delivery filters, connection probes, and configuration export/import.
 - Include plugin settings in configuration exports and validate imports before applying them.
