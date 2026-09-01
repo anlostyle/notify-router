@@ -1,0 +1,21 @@
+name: Sync fork with upstream
+
+on:
+  schedule:
+    - cron: "17 2 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Sync master from upstream
+        uses: repo-sync/github-sync@v2
+        with:
+          source_repo: anlostyle/notify-router
+          source_branch: master
+          destination_branch: master
+          github_token: ${{ secrets.GITHUB_TOKEN }}
