@@ -12,6 +12,7 @@ from importlib.resources import files
 from pathlib import Path
 from zoneinfo import ZoneInfo
 
+from jinja2 import meta
 from jinja2.sandbox import SandboxedEnvironment
 
 
@@ -374,11 +375,28 @@ class Store:
         names = [x.get("name") for x in payload["template"] if isinstance(x, dict)]
         if len(names) != len(payload["template"]) or None in names or len(names) != len(set(names)):
             raise ValueError("template names must be present and unique")
+        for template in payload["template"]:
+            self.validate_template(template)
         with self._config_lock:
             temp = self.templates_path.with_suffix(".json.tmp")
             temp.write_text(json.dumps(payload, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
             shutil.copy2(self.templates_path, self.templates_path.with_suffix(".json.bak"))
             temp.replace(self.templates_path)
+
+    @staticmethod
+    def validate_template(template):
+        if not isinstance(template, dict):
+            raise ValueError("each template must be an object")
+        for field in ("title", "content"):
+            source = str(template.get(field) or "")
+            try:
+                parsed = _jinja.parse(source)
+            except Exception as exc:
+                raise ValueError(f"template {template.get('name') or 'unnamed'} {field} has invalid Jinja syntax: {exc}") from exc
+            # The parser deliberately reports undeclared names only; runtime
+            # values may come from plugins, so unknown names are not rejected.
+            meta.find_undeclared_variables(parsed)
+        return True
 
     def render_event(self, route, template_type, context):
         bound = set(_name_list(route.get("bind_template")))
@@ -600,9 +618,16 @@ class Store:
             "channel_states": latest_channels,
         }
 
-    def delivery_status(self, limit=100, status=None):
-        where = "WHERE d.status=?" if status else ""
-        params = (status, limit) if status else (limit,)
+    def delivery_status(self, limit=100, status=None, route_id=None, channel_name=None, error=None, date_from=None, date_to=None):
+        clauses, params = [], []
+        if status: clauses.append("d.status=?"); params.append(status)
+        if route_id: clauses.append("o.route_id=?"); params.append(route_id)
+        if channel_name: clauses.append("d.channel_name=?"); params.append(channel_name)
+        if error: clauses.append("COALESCE(d.last_error, '') LIKE ?"); params.append(f"%{error}%")
+        if date_from: clauses.append("substr(o.created_at, 1, 10)>=?"); params.append(date_from)
+        if date_to: clauses.append("substr(o.created_at, 1, 10)<=?"); params.append(date_to)
+        where = f"WHERE {' AND '.join(clauses)}" if clauses else ""
+        params.append(limit)
         with self.connect() as db:
             return [
                 {**dict(x), "last_error": redact_secret_text(x["last_error"])}
