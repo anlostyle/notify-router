@@ -13,10 +13,18 @@ jobs:
   sync:
     runs-on: ubuntu-latest
     steps:
-      - name: Sync master from upstream
-        uses: repo-sync/github-sync@v2
+      - name: Check out fork
+        uses: actions/checkout@v4
         with:
-          source_repo: anlostyle/notify-router
-          source_branch: master
-          destination_branch: master
-          github_token: ${{ secrets.GITHUB_TOKEN }}
+          fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
+      - name: Merge upstream master
+        shell: bash
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git remote add upstream https://github.com/anlostyle/notify-router.git
+          git fetch upstream master
+          git switch master
+          git merge --no-edit upstream/master
+          git push origin master

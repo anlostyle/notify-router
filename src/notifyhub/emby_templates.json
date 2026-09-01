@@ -1,53 +1,14 @@
 {
   "template": [
-    {
-      "name": "PVE备份",
-      "type": "PVE.Backup",
-      "description": "",
-      "title": "{{ machine_name }} {{ task_type }} - {{ task_status }}",
-      "content": "{% for vmid, name, statu, time, size in details %}- ID {{ vmid }} - {{ name }}：{{ size }}，耗时 {{ time }}, 状态 {{ statu }}\n{% endfor %}\n总耗时: {{ total_time }}\n总大小: {{ total_size }}"
-    },
-    {
-      "name": "PVE精简任务",
-      "type": "PVE.Pruning",
-      "description": "",
-      "title": "{{ machine_name }} {{ task_type }} - {{ task_status }}",
-      "content": "数据存储库：{{ datastore_name }}\n任务编号：{{ job_id }}"
-    },
-    {
-      "name": "PVE垃圾回收",
-      "type": "PVE.Garbage",
-      "description": "",
-      "title": "{{ machine_name }} {{ task_type }} - {{ task_status }}",
-      "content": "数据存储库：{{ datastore_name }}\n索引文件数量：{{ index_file_count }}\n清理垃圾数据量：{{ removed_garbage }}\n\n原始数据体积：{{ original_data_usage }}\n实际占用磁盘空间：{{ on_disk_usage }}\n去重因子：{{ deduplication_factor }}"
-    },
-    {
-      "name": "Emby开始播放",
-      "type": "Emby.PlaybackStart",
-      "description": "",
-      "title": "🦸{{user}}开始播放 {{title}}{%if year%}({{year}}){%endif%}",
-      "content": "{%if progress_text%}{{ progress_text }}{%endif%}\n▶️媒体库：[{{ server_name }}] - {{ transcoding_info }} · {{ bitrate }}Mbps\n♣️媒体：{{ container }} · {{ size }} · {{ year }} {{ video_stream_title }}\n📱设备：{{ client }} · {{ device_name }}\n🌐来自：{{ client_ip }}{{ ip_location }}\n🎭风格：{%if genres%}{{ genres }}{%endif%}\n🍿简介：{%if intro%}{{ intro }}{%endif%}"
-    },
-    {
-      "name": "Emby停止播放",
-      "type": "Emby.PlaybackEnd",
-      "description": "",
-      "title": "🦸{{user}}停止播放 {{title}}{%if year%}({{year}}){%endif%}",
-      "content": "{%if progress_text%}{{ progress_text }}{%endif%}\n⏹️媒体库：[{{ server_name }}] - {{ transcoding_info }} · {{ bitrate }}Mbps\n♣️媒体：{{ container }} · {{ size }} · {{ year }} {{ video_stream_title }}\n📱设备：{{ client }} · {{ device_name }}\n🌐来自：{{ client_ip }}{{ ip_location }}\n🎭风格：{%if genres%}{{ genres }}{%endif%}\n🍿简介：{%if intro%}{{ intro }}{%endif%}"
-    },
-    {
-      "name": "Emby电影新增",
-      "type": "Emby.LibraryNewMovie",
-      "description": "",
-      "title": "🎞 新片入库： {{title}} {%if release_year%}({{release_year}}){%endif%}",
-      "content": "🍟 {{server_name}}\n🕒时间: {{created_at}}\n🎭风格：{%if genres%}{{genres}}{%endif%}\n♣️大小：{{size}} · {{ container }} · {{ bitrate }}\n🍿简介：{%if intro%}{{intro}}{%endif%}"
-    },
-    {
-      "name": "Emby剧集新增",
-      "type": "Emby.LibraryNewSeries",
-      "description": "",
-      "title": "📺 新片入库： {{title}}",
-      "content": "🍟 {{server_name}}\n🕒时间: {{created_at}}\n📝单集标题：{%if episode_title%}{{episode_title}}{%endif%}\n🎭风格：{%if series_genres%}{{series_genres}}{%endif%}\n♣️大小：{{size}} · {{ container }} · {{ bitrate }}\n🍿简介：{%if intro%}{{intro}}{%endif%}"
-    }
+    {"name": "emby_playback_start", "type": "Emby.PlaybackStart", "title": "{{ notification_title }}", "content": "{{ content }}"},
+    {"name": "emby_playback_end", "type": "Emby.PlaybackEnd", "title": "{{ notification_title }}", "content": "{{ content }}"},
+    {"name": "emby_library_new_movie", "type": "Emby.LibraryNewMovie", "title": "{{ notification_title }}", "content": "{{ content }}"},
+    {"name": "emby_library_new_series", "type": "Emby.LibraryNewSeries", "title": "{{ notification_title }}", "content": "{{ content }}"},
+    {"name": "pve_backup", "type": "PVE.Backup", "description": "PVE 备份任务通知", "title": "{{ machine_name }} 备份：{{ task_status }}", "content": "任务类型：{{ task_type }}\n节点：{{ machine_name }}\n状态：{{ task_status }}\n总耗时：{{ total_time }}\n总大小：{{ total_size }}"},
+    {"name": "pve_pruning", "type": "PVE.Pruning", "description": "PVE 数据存储精简通知", "title": "{{ machine_name }} 精简：{{ task_status }}", "content": "任务类型：{{ task_type }}\n节点：{{ machine_name }}\n状态：{{ task_status }}\n数据存储：{{ datastore_name }}\n原始数据：{{ original_data_usage }}\n磁盘占用：{{ on_disk_usage }}\n去重系数：{{ deduplication_factor }}"},
+    {"name": "pve_garbage", "type": "PVE.Garbage", "description": "PVE 垃圾回收通知", "title": "{{ machine_name }} 垃圾回收：{{ task_status }}", "content": "任务类型：{{ task_type }}\n节点：{{ machine_name }}\n状态：{{ task_status }}\n数据存储：{{ datastore_name }}\n已移除垃圾：{{ removed_garbage }}\n原始数据：{{ original_data_usage }}\n磁盘占用：{{ on_disk_usage }}\n去重系数：{{ deduplication_factor }}"},
+    {"name": "watchtower_update", "type": "Watchtower.Update", "description": "Watchtower 镜像更新通知", "title": "Watchtower 更新：{{ server_name }}", "content": "更新镜像数：{{ updated_image_count }}\n{{ updated_image_list }}"},
+    {"name": "watchtower_error", "type": "Watchtower.Error", "description": "Watchtower 更新异常通知", "title": "{{ update_title }}", "content": "{{ update_content }}"},
+    {"name": "watchtower_start", "type": "Watchtower.Start", "description": "Watchtower 启动通知", "title": "{{ update_title }}", "content": "{{ update_content }}"}
   ]
 }
