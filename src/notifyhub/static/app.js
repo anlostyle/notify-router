@@ -104,6 +104,7 @@ const state = {
   lastPage: '',
   modalSubmit: null,
   logTimer: null,
+  pluginLogTimer: null,
 }
 
 function icon(name) {
@@ -456,8 +457,10 @@ function renderPlugins() {
   const sourceSummary = sources.length
     ? sources.map(source => `<span class="tag ${source.status === 'error' ? 'danger' : ''}" title="${escapeHtml(source.error || source.url)}">${escapeHtml(source.name)} · ${source.status === 'ok' ? '正常' : '异常'}</span>`).join(' ')
     : state.pluginStoreLoading ? '<span class="form-note">正在加载插件源…</span>' : '<span class="form-note">还没有插件源，点击右上角“插件源”添加地址。</span>'
-  const installedCards = plugins.length ? `<div class="entity-grid">${plugins.map(plugin => `
-    <article class="entity-card"><div class="entity-head"><span class="entity-icon">${icon('plug')}</span><div class="entity-title"><h3>${escapeHtml(plugin.name || plugin.id)}</h3><p>${escapeHtml(plugin.id)} · v${escapeHtml(plugin.version || '—')}</p></div><span class="status-badge active">已加载</span></div><div class="entity-body"><p>${escapeHtml(plugin.description || '暂无插件说明')}</p><div>${(plugin.capabilities || []).map(value => `<span class="tag purple">${escapeHtml(value)}</span>`).join(' ')}</div></div><div class="entity-actions">${plugin.has_frontend ? `<button class="button secondary small" data-action="open-plugin" data-id="${escapeHtml(plugin.id)}">打开页面</button>` : ''}<span class="spacer"></span><button class="button secondary small" data-action="edit-plugin" data-id="${escapeHtml(plugin.id)}">${icon('settings')}配置</button></div></article>`).join('')}</div>`
+  const installedCards = plugins.length ? `<div class="entity-grid">${plugins.map(plugin => {
+    const canTest = (plugin.capabilities || []).includes('notify.test')
+    return `<article class="entity-card"><div class="entity-head"><span class="entity-icon">${icon('plug')}</span><div class="entity-title"><h3>${escapeHtml(plugin.name || plugin.id)}</h3><p>${escapeHtml(plugin.id)} · v${escapeHtml(plugin.version || '—')}</p></div><span class="status-badge active">已加载</span></div><div class="entity-body"><p>${escapeHtml(plugin.description || '暂无插件说明')}</p><div>${(plugin.capabilities || []).map(value => `<span class="tag purple">${escapeHtml(value)}</span>`).join(' ')}</div></div><div class="entity-actions">${plugin.has_frontend ? `<button class="button secondary small" data-action="open-plugin" data-id="${escapeHtml(plugin.id)}">打开页面</button>` : ''}<button class="button secondary small" data-action="plugin-docs" data-id="${escapeHtml(plugin.id)}">使用说明</button><button class="button secondary small" data-action="plugin-logs" data-id="${escapeHtml(plugin.id)}">日志</button>${canTest ? `<button class="button secondary small" data-action="test-plugin" data-id="${escapeHtml(plugin.id)}">${icon('send')}测试通知</button>` : ''}<span class="spacer"></span><button class="button secondary small" data-action="edit-plugin" data-id="${escapeHtml(plugin.id)}">${icon('settings')}配置</button></div></article>`
+  }).join('')}</div>`
     : '<div class="empty-state"><p>当前没有已加载的可选插件</p></div>'
   const storeCards = catalog.length ? `<div class="entity-grid">${catalog.map(plugin => {
     const action = plugin.update_available ? 'update-plugin' : plugin.installed ? '' : 'install-plugin'
@@ -543,6 +546,10 @@ function openModal({ eyebrow = '通知管理', title, body, submitText = '保存
 function closeModal() {
   const modal = $('#modal')
   if (modal.open) modal.close()
+  if (state.pluginLogTimer) {
+    clearInterval(state.pluginLogTimer)
+    state.pluginLogTimer = null
+  }
   state.modalSubmit = null
 }
 
@@ -786,6 +793,65 @@ function pluginHelp(plugin) {
   }).join('')}</div>`
 }
 
+function pluginDocs(plugin) {
+  const docs = plugin.documentation && typeof plugin.documentation === 'object' ? plugin.documentation : {}
+  const sections = []
+  if (typeof plugin.documentation === 'string' && plugin.documentation.trim()) sections.push(`<div class="form-note">${escapeHtml(plugin.documentation)}</div>`)
+  if (docs.summary) sections.push(`<div class="form-note">${escapeHtml(docs.summary)}</div>`)
+  const listSection = (title, values) => {
+    if (!Array.isArray(values) || !values.length) return
+    sections.push(`<div class="form-section"><h3 class="form-section-title">${escapeHtml(title)}</h3><ol class="plugin-doc-list">${values.map(value => `<li>${escapeHtml(value)}</li>`).join('')}</ol></div>`)
+  }
+  listSection('配置步骤', docs.setup)
+  listSection('使用方式', docs.usage)
+  if (Array.isArray(docs.callbacks) && docs.callbacks.length) sections.push(`<div class="form-section"><h3 class="form-section-title">回调地址</h3>${docs.callbacks.map(item => `<div class="form-note"><strong>${escapeHtml(item.name || '回调地址')}</strong>${item.method ? `<span class="tag purple" style="margin-left:8px">${escapeHtml(item.method)}</span>` : ''}<code class="code plugin-doc-code">${escapeHtml(String(item.url || '').replaceAll('{site_url}', String(state.config?.app?.site_url || location.origin).replace(/\/+$/, '')))}</code></div>`).join('')}</div>`)
+  if (Array.isArray(docs.examples) && docs.examples.length) sections.push(`<div class="form-section"><h3 class="form-section-title">示例</h3>${docs.examples.map(item => `<div class="form-note"><strong>${escapeHtml(item.title || '示例')}</strong><code class="code plugin-doc-code">${escapeHtml(item.code || '')}</code></div>`).join('')}</div>`)
+  listSection('注意事项', docs.notes)
+  if (!sections.length) return pluginHelp(plugin) || '<p class="form-note">这个插件暂时没有补充使用说明。</p>'
+  return sections.join('')
+}
+
+function openPluginDocs(plugin) {
+  openModal({ eyebrow: '插件说明', title: plugin.name || plugin.id, body: pluginDocs(plugin), wide: true, noSubmit: true })
+}
+
+async function openPluginLogs(plugin) {
+  if (state.pluginLogTimer) clearInterval(state.pluginLogTimer)
+  const render = logs => {
+    const status = plugin.running ? '<span class="status-badge active">运行中</span>' : '<span class="status-badge failed">已停止</span>'
+    const body = logs.length ? `<div class="plugin-log-meta"><span>${status}</span><span class="form-note">最近 ${logs.length} 条</span></div><div class="log-view">${logs.slice().reverse().map(item => `<div class="log-line"><span class="log-time">${escapeHtml(item.time)}</span><span class="log-level ${escapeHtml(item.level)}">${escapeHtml(item.level)}</span><span class="log-name">${escapeHtml(item.logger)}</span><span>${escapeHtml(item.message)}</span></div>`).join('')}</div>` : `<div class="plugin-log-meta"><span>${status}</span></div><p class="form-note">暂无插件日志。Worker 启动、任务执行和异常会显示在这里。</p>`
+    $('#modal-body').innerHTML = body
+  }
+  openModal({ eyebrow: '插件日志', title: plugin.name || plugin.id, body: '<p class="form-note">正在加载日志…</p>', wide: true, noSubmit: true })
+  const refresh = async () => {
+    try { render(await api(`/api/admin/plugins/${encodeURIComponent(plugin.id)}/logs?limit=300`)) } catch (error) { render([{ time: '', level: 'ERROR', logger: 'notify', message: error.message }]) }
+  }
+  await refresh()
+  state.pluginLogTimer = setInterval(refresh, 4000)
+}
+
+async function openPluginTest(plugin) {
+  const routes = state.config.routes || []
+  const routeOptions = routes.map(item => [item.route_id, item.route_name || item.route_id])
+  let config = {}
+  try { config = await api(`/api/admin/plugins/${encodeURIComponent(plugin.id)}/config`) || {} } catch { /* route can still be selected manually */ }
+  const selected = config.route_id || config.notify_route || config.notify_route_id || (routes.length === 1 ? routes[0].route_id : '')
+  openModal({
+    eyebrow: '插件通知测试', title: `测试 · ${plugin.name || plugin.id}`,
+    body: `${formField('route_id', '通知通道', 'select', selected, '', '模拟插件事件并通过真实通知通道发送。', routeOptions)}${formField('title', '通知标题', 'text', `[测试] ${plugin.name || plugin.id}`)}${formField('content', '通知内容', 'textarea', '这是一条来自插件的测试通知，用于验证插件配置的通知通道。')}`,
+    submitText: '发送测试通知',
+    onSubmit: async form => {
+      const data = new FormData(form)
+      const routeId = String(data.get('route_id') || '').trim()
+      if (!routeId) throw new Error('请选择通知通道')
+      const result = await api(`/api/admin/plugins/${encodeURIComponent(plugin.id)}/test`, { method: 'POST', body: JSON.stringify({ route_id: routeId, title: data.get('title'), content: data.get('content') }) })
+      closeModal()
+      toast('测试通知已加入队列', `通道：${result.route_id}`)
+      setTimeout(async () => { await loadCore(); if (currentPage() === 'deliveries') renderCurrent() }, 800)
+    },
+  })
+}
+
 function openPluginSources() {
   const sources = (state.config.app?.plugin_sources || []).join('\n')
   openModal({
@@ -806,7 +872,7 @@ function openPluginSources() {
 async function openPluginForm(plugin) {
   const config = await api(`/api/admin/plugins/${encodeURIComponent(plugin.id)}/config`)
   const fields = plugin.configField || []
-  const body = `${pluginHelp(plugin)}${fields.length ? fields.map(field => pluginField(field, config[field.fieldName])).join('') : '<p class="form-note">这个插件没有通用配置项，请使用插件自己的页面完成操作。</p>'}`
+  const body = `${fields.length ? fields.map(field => pluginField(field, config[field.fieldName])).join('') : '<p class="form-note">这个插件没有通用配置项，请使用插件自己的页面完成操作。</p>'}`
   openModal({
     eyebrow: '插件设置', title: plugin.name || plugin.id, body,
     noSubmit: !fields.length,
@@ -1022,6 +1088,9 @@ async function handleAction(action, target) {
     }, true)
   }
   if (action === 'edit-plugin') return openPluginForm(state.plugins.find(item => item.id === target.dataset.id))
+  if (action === 'plugin-docs') return openPluginDocs(state.plugins.find(item => item.id === target.dataset.id))
+  if (action === 'plugin-logs') return openPluginLogs(state.plugins.find(item => item.id === target.dataset.id))
+  if (action === 'test-plugin') return openPluginTest(state.plugins.find(item => item.id === target.dataset.id))
   if (action === 'open-plugin') return window.open(`/api/plugins/${encodeURIComponent(target.dataset.id)}/frontend/`, '_blank', 'noopener')
   if (action === 'change-password') return openPasswordForm()
   if (action === 'retry-delivery') {

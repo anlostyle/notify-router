@@ -6,17 +6,41 @@ import re
 import signal
 import subprocess
 import sys
+import threading
 import time
 from dataclasses import dataclass
+from collections import deque
 from pathlib import Path
 
 import httpx
 from fastapi import HTTPException, Request, Response
 
-from .store import enabled
+from .store import enabled, redact_secret_text
 
 
 logger = logging.getLogger(__name__)
+
+
+def _friendly_worker_log(text):
+    """Translate stable Uvicorn lifecycle lines while preserving diagnostics."""
+    value = str(text).strip()
+    if re.search(r"Started server process", value):
+        pid = re.search(r"\[(\d+)\]", value)
+        return f"Worker 进程已启动（PID {pid.group(1)}）" if pid else "Worker 进程已启动"
+    if "Waiting for application startup" in value:
+        return "等待插件启动…"
+    if "Application startup complete" in value:
+        return "插件启动完成"
+    if "Uvicorn running on unix socket" in value:
+        socket = value.split("Uvicorn running on unix socket", 1)[1].split("(", 1)[0].strip()
+        return f"Worker 正在监听 Unix Socket：{socket}" if socket else "Worker 正在监听 Unix Socket"
+    if value == "Shutting down" or value.endswith("Shutting down"):
+        return "正在停止插件 Worker…"
+    if "Application shutdown complete" in value:
+        return "插件已停止"
+    if "Finished server process" in value:
+        return "Worker 进程已退出"
+    return value
 
 
 @dataclass
@@ -38,6 +62,36 @@ class PluginSupervisor:
         self.socket_dir.mkdir(parents=True, exist_ok=True)
         self.processes = {}
         self.manifests = []
+        self.plugin_logs = {}
+        self.plugin_keys = {}
+        self._log_threads = {}
+
+    def _append_log(self, plugin_id, level, message):
+        buffer = self.plugin_logs.setdefault(plugin_id, deque(maxlen=500))
+        buffer.append({
+            "time": time.strftime("%Y-%m-%d %H:%M:%S"),
+            "level": level,
+            "logger": f"plugin.{plugin_id}",
+            "message": redact_secret_text(str(message).rstrip()),
+        })
+
+    def _read_worker_output(self, plugin_id, stream):
+        try:
+            for line in iter(stream.readline, ""):
+                text = line.strip()
+                if not text:
+                    continue
+                upper = text.upper()
+                level_match = re.search(r"\b(CRITICAL|ERROR|WARNING|DEBUG|INFO)\b", upper)
+                level = level_match.group(1) if level_match else ("ERROR" if "TRACEBACK" in upper else "INFO")
+                self._append_log(plugin_id, level, _friendly_worker_log(text))
+        except Exception as exc:
+            self._append_log(plugin_id, "ERROR", f"日志读取失败: {exc}")
+        finally:
+            try:
+                stream.close()
+            except Exception:
+                pass
 
     def _enabled(self, plugin_id):
         data = self.store.get_plugin_data(plugin_id)
@@ -58,6 +112,7 @@ class PluginSupervisor:
     def _spawn(self, plugin_id):
         directory = self.store.plugins_dir / plugin_id
         manifest = json.loads((directory / "manifest.json").read_text(encoding="utf-8"))
+        self.plugin_keys[str(manifest.get("id") or plugin_id)] = plugin_id
         safe = re.sub(r"[^A-Za-z0-9_.-]", "_", plugin_id)
         socket = self.socket_dir / f"{safe[:24]}-{str(time.time_ns())[-10:]}.sock"
         env = os.environ.copy()
@@ -66,12 +121,21 @@ class PluginSupervisor:
         process = subprocess.Popen(
             [sys.executable, "-m", "notifyhub.plugin_worker", "--plugin-dir", str(directory), "--socket", str(socket), "--data-dir", str(self.store.data_dir)],
             env=env,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            text=True,
+            bufsize=1,
         )
+        self._append_log(plugin_id, "INFO", "Worker 启动中")
+        reader = threading.Thread(target=self._read_worker_output, args=(plugin_id, process.stdout), name=f"plugin-log-{plugin_id}", daemon=True)
+        reader.start()
+        self._log_threads[plugin_id] = reader
         candidate = PluginProcess(plugin_id, str(manifest.get("version") or ""), manifest, process, socket)
         try:
             self._wait(candidate)
             return candidate
         except Exception:
+            self._append_log(plugin_id, "ERROR", "Worker 启动失败")
             self._terminate(candidate)
             raise
 
@@ -138,6 +202,7 @@ class PluginSupervisor:
     def stop(self, plugin_id):
         item = self.processes.pop(plugin_id, None)
         if item:
+            self._append_log(plugin_id, "INFO", "Worker 已停止")
             self._terminate(item)
         self._sync_manifests()
 
@@ -147,7 +212,17 @@ class PluginSupervisor:
 
     def status(self, plugin_id):
         item = self.processes.get(plugin_id)
+        if not item:
+            item = next((value for value in self.processes.values() if str(value.manifest.get("id") or "") == plugin_id), None)
         return {"running": bool(item and item.process.poll() is None), "version": item.version if item else None}
+
+    def logs(self, plugin_id, limit=200):
+        key = plugin_id
+        if key not in self.plugin_logs:
+            item = next((value for value in self.processes.values() if str(value.manifest.get("id") or "") == plugin_id), None)
+            key = item.plugin_id if item else self.plugin_keys.get(plugin_id, plugin_id)
+        items = list(self.plugin_logs.get(key, ()))
+        return items[-max(1, min(int(limit), 500)):]
 
     async def proxy(self, plugin_id, path, request: Request):
         item = self.processes.get(plugin_id)

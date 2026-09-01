@@ -7,7 +7,7 @@
   "thumbnailurl": "",
   "version": "0.1.0",
   "schema_version": 2,
-  "capabilities": ["monitor.provider", "task.handler", "notify.action"],
+  "capabilities": ["monitor.provider", "task.handler", "notify.action", "notify.test"],
   "preserve": ["state.json"],
   "documentation": "",
   "path": "/ndu_monitor",

@@ -3,7 +3,7 @@ import json
 import httpx
 import pytest
 
-from notifyhub.plugin_supervisor import PluginSupervisor
+from notifyhub.plugin_supervisor import PluginSupervisor, _friendly_worker_log
 from notifyhub.store import Store
 
 
@@ -41,6 +41,12 @@ def worker_version(item):
     transport = httpx.HTTPTransport(uds=str(item.socket))
     with httpx.Client(transport=transport, base_url="http://plugin") as client:
         return client.get("/api/plugins/demo/version").json()["version"]
+
+
+def test_friendly_worker_log_translates_uvicorn_lifecycle_lines():
+    assert _friendly_worker_log("INFO:     Started server process [123]") == "Worker 进程已启动（PID 123）"
+    assert _friendly_worker_log("INFO:     Application startup complete.") == "插件启动完成"
+    assert _friendly_worker_log("INFO:     Uvicorn running on unix socket /tmp/demo.sock (Press CTRL+C to quit)") == "Worker 正在监听 Unix Socket：/tmp/demo.sock"
 
 
 def test_hot_reload_switches_only_plugin_worker_and_keeps_old_on_failure(tmp_path):

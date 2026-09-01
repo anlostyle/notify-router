@@ -137,6 +137,14 @@ class PluginInstallRequest(BaseModel):
     plugin_id: str
 
 
+class PluginTestRequest(BaseModel):
+    route_id: str | None = None
+    title: str = "插件测试通知"
+    content: str = "这是一条来自插件的测试通知，用于验证插件配置的通知通道。"
+    push_img_url: str | None = None
+    push_link_url: str | None = None
+
+
 def api_auth(authorization: str | None = Header(default=None)):
     token = os.environ.get("NOTIFY_API_TOKEN", "")
     if token and not hmac.compare_digest(authorization or "", f"Bearer {token}"):
@@ -746,6 +754,17 @@ def plugins():
     ]
 
 
+@app.get("/api/admin/plugins/{plugin_id}/logs", dependencies=[Depends(admin_auth)])
+def plugin_logs(plugin_id: str, limit: int = 200):
+    manifest = next((x for x in _all_plugin_manifests() if str(x.get("id") or "") == plugin_id), None)
+    if not manifest:
+        raise HTTPException(404, "plugin not found")
+    if manifest in builtin_plugin_manifests:
+        items = [item for item in LOG_BUFFER if plugin_id in str(item.get("logger") or "") or plugin_id in str(item.get("message") or "")]
+        return items[-max(1, min(limit, 500)):]
+    return plugin_supervisor.logs(plugin_id, limit)
+
+
 def _plugin_sources():
     return list(store.config.get("app", {}).get("plugin_sources") or [])
 
@@ -839,6 +858,29 @@ def save_plugin_config(plugin_id: str, payload: dict = Body(...)):
         1,
     )
     return {"code": 0, "message": "saved"}
+
+
+@app.post("/api/admin/plugins/{plugin_id}/test", dependencies=[Depends(admin_auth)])
+def test_plugin_notification(plugin_id: str, payload: PluginTestRequest):
+    manifest = next((x for x in _all_plugin_manifests() if str(x.get("id") or "") == plugin_id), None)
+    if not manifest:
+        raise HTTPException(404, "plugin not found")
+    if "notify.action" not in (manifest.get("capabilities") or []):
+        raise HTTPException(400, "该插件不支持通知测试")
+    config = store.get_plugin_config(plugin_id) or {}
+    route_id = str(payload.route_id or config.get("route_id") or config.get("notify_route") or config.get("notify_route_id") or "").strip()
+    if not route_id and len(store.routes) == 1:
+        route_id = str(store.routes[0].get("route_id") or "")
+    if not route_id:
+        raise HTTPException(400, "请先为插件配置通知通道，或在测试时选择一个通知通道")
+    try:
+        outbox_id = store.enqueue_router(route_id, payload.title, payload.content, payload.push_img_url, payload.push_link_url)
+    except KeyError as exc:
+        raise HTTPException(400, str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(400, str(exc)) from exc
+    logger.info("plugin notification test queued: %s route=%s outbox=%s", plugin_id, route_id, outbox_id)
+    return {"code": 0, "queued": True, "outbox_id": outbox_id, "plugin_id": plugin_id, "route_id": route_id}
 
 
 builtin_plugin_manifests = register_builtin_plugins(app, store)

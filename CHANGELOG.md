@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.6.13 - 2026-09-01
+
+- 独立展示插件使用说明与企业微信回调地址，保持配置页简洁。
+- 增加插件 Worker 日志查看与中文生命周期状态。
+- 增加 NDU、NSRSS、Reminder 的插件级通知测试。
+
 ## 0.6.12 - 2026-09-01
 
 - Add CleanLLM-style theme palettes, per-event template variable helpers, delivery filters, connection probes, and configuration export/import.

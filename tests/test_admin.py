@@ -47,6 +47,33 @@ def test_admin_login_returns_plaintext_config_and_can_queue_channel_test(tmp_pat
         client.close()
 
 
+def test_plugin_notification_test_queues_selected_route_and_plugin_logs_are_available(tmp_path, monkeypatch):
+    monkeypatch.setenv("WORKDIR", str(tmp_path))
+    monkeypatch.setenv("NH_USER", "admin")
+    monkeypatch.setenv("NH_PASSWORD", "test-password")
+    main = importlib.import_module("notifyhub.main")
+    test_store = Store(tmp_path)
+    test_store.save_config({
+        "app": {},
+        "channels": [{"name": "test", "type": "webhook", "config": {"url": "http://127.0.0.1:9"}}],
+        "routes": [{"route_id": "r1", "route_name": "Route", "channel_name": ["test"], "active": True}],
+    })
+    monkeypatch.setattr(main, "store", test_store)
+    monkeypatch.setattr(main, "builtin_plugin_manifests", [])
+    monkeypatch.setattr(main.plugin_supervisor, "manifests", [{"id": "demo", "name": "Demo", "capabilities": ["notify.action", "notify.test"]}])
+    main.plugin_supervisor.plugin_logs["demo"] = [{"time": "now", "level": "INFO", "logger": "plugin.demo", "message": "ready"}]
+    client = TestClient(main.app)
+    try:
+        assert client.post("/api/admin/login", json={"username": "admin", "password": "test-password"}).status_code == 200
+        response = client.post("/api/admin/plugins/demo/test", json={"route_id": "r1", "title": "T", "content": "C"})
+        assert response.status_code == 200
+        assert response.json()["route_id"] == "r1"
+        assert test_store.delivery_status()[0]["status"] == "pending"
+        assert client.get("/api/admin/plugins/demo/logs").json()[0]["message"] == "ready"
+    finally:
+        client.close()
+
+
 def test_config_import_validates_before_mutating_and_exports_plugin_configs(tmp_path, monkeypatch):
     monkeypatch.setenv("WORKDIR", str(tmp_path))
     monkeypatch.setenv("NH_USER", "admin")

@@ -7,7 +7,7 @@
     "thumbnailurl": "",
     "version": "0.0.2",
     "schema_version": 2,
-    "capabilities": ["task.handler", "monitor.provider", "notify.action"],
+    "capabilities": ["task.handler", "monitor.provider", "notify.action", "notify.test"],
     "documentation": "",
     "path": "/nsrss",
     "configField": [
