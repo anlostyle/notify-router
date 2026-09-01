@@ -648,9 +648,37 @@ function openTemplateForm(template = null) {
   const selectedType = original.type || DEFAULT_TEMPLATE_TYPE
   const knownType = selectedType === DEFAULT_TEMPLATE_TYPE || state.eventTypes.some(item => item.value === selectedType)
   const typeOptions = templateEventOptions(selectedType)
-  const variableNames = selectedType.startsWith('PVE.') ? ['machine_name', 'task_type', 'task_status', 'datastore_name', 'total_time', 'total_size', 'job_id', 'removed_garbage'] : selectedType.startsWith('Watchtower.') ? ['update_title', 'update_content', 'server_name', 'updated_image_count', 'updated_image_list'] : ['notification_title', 'content', 'username', 'title', 'year', 'genres', 'overview', 'server_name', 'device', 'size', 'container', 'bitrate', 'progress_text']
-  const examples = { notification_title: '用户开始播放：示例电影', content: '媒体库：电影 · 设备：手机', username: '用户', title: '示例电影', year: '2025', genres: '剧情、科幻', overview: '这是一段示例简介。', server_name: '家庭影院', device: '手机客户端', size: '2 GB', container: 'H264', bitrate: '8', progress_text: '进度：50%', machine_name: 'PVE节点', task_type: '备份', task_status: '成功', datastore_name: 'local', total_time: '3秒', total_size: '1 GB', job_id: 'daily', removed_garbage: '200 MB', update_title: 'Watchtower 更新', update_content: '发现 1 个镜像更新', updated_image_count: '1', updated_image_list: 'example/app:latest' }
-  const variableHelper = `<div class="variable-helper"><div class="helper-heading"><strong>可用变量</strong><small>点击插入到当前编辑框</small></div><div class="variable-list">${variableNames.map(name => `<button type="button" class="variable-chip" data-variable="${escapeHtml(name)}">{{ ${escapeHtml(name)} }}</button>`).join('')}</div></div>`
+  const embyBaseVariables = ['notification_title', 'content', 'event_code', 'event_label', 'event', 'username', 'user', 'user_data', 'item', 'item_data', 'item_type', 'session', 'session_data', 'server', 'server_data', 'payload', 'server_name', 'server_id', 'server_version', 'server_info', 'server_url', 'date', 'date_text', 'remote_ip', 'location', 'address_info', 'client', 'client_version', 'device', 'device_name', 'device_info', 'device_play_info', 'item_url', 'image_url', 'emby_url', 'created_at']
+  const embyItemVariables = ['item_type_name', 'item_name', 'title', 'year', 'year_label', 'premiere_date', 'premiere_text', 'score_origin', 'official_rating', 'score_text', 'genres', 'genres_text', 'people', 'people_text', 'overview', 'overview_text', 'container', 'size', 'media_info', 'film_info', 'album_info']
+  const embyPlaybackVariables = ['playback', 'playback_data', 'play_state', 'play_method', 'volume', 'position_seconds', 'runtime_seconds', 'position', 'runtime', 'progress_bar', 'progress_text', 'video_stream_title', 'transcoding_info', 'bitrate', 'current_cpu']
+  const embyVariables = [...embyBaseVariables, ...embyItemVariables]
+  const variableGroups = {
+    'Emby.PlaybackStart': [...embyVariables, ...embyPlaybackVariables],
+    'Emby.PlaybackPause': [...embyVariables, ...embyPlaybackVariables],
+    'Emby.PlaybackUnpause': [...embyVariables, ...embyPlaybackVariables],
+    'Emby.PlaybackEnd': [...embyVariables, ...embyPlaybackVariables],
+    'Emby.LibraryNewMovie': [...embyVariables, 'episode_count'],
+    'Emby.LibraryNewSeries': [...embyVariables, 'episode_count'],
+    'Emby.LibraryNewAudio': [...embyVariables],
+    'Emby.LibraryDeleted': [...embyVariables, 'item_path', 'path_text'],
+    'Emby.UserAuthenticated': [...embyBaseVariables],
+    'Emby.UserAuthenticationFailed': [...embyBaseVariables],
+    'Emby.PluginInstalled': [...embyBaseVariables, 'plugin_name', 'plugin_version', 'plugin_info', 'plugin_version_text'],
+    'Emby.PluginUninstalled': [...embyBaseVariables, 'plugin_name', 'plugin_version', 'plugin_info', 'plugin_version_text'],
+    'Emby.IntroskipUpdate': [...embyVariables],
+    'Emby.ItemMarkedPlayed': [...embyVariables, 'is_favorite'],
+    'Emby.ItemMarkedUnplayed': [...embyVariables, 'is_favorite'],
+    'Emby.ItemRated': [...embyVariables, 'is_favorite'],
+    'Emby.SystemStartup': [...embyBaseVariables],
+    'Emby.SystemUpdateAvailable': [...embyBaseVariables, 'new_version', 'current_version_text', 'new_version_text'],
+  }
+  const examples = { notification_title: '用户开始播放：示例电影', content: '媒体库：电影 · 设备：手机', event_code: 'playback.start', event_label: '开始播放', event: '开始播放', username: '用户', user: '用户', title: '示例电影', item_name: '示例电影', item_type_name: '电影', item_type: 'Movie', year: '2025', year_label: '(2025)', genres: '剧情、科幻', genres_text: '剧情·科幻', overview: '这是一段示例简介。', server_name: '家庭影院', server_version: '4.8.0', device: '手机客户端', device_name: '手机客户端', client: 'Emby', size: '2 GB', container: 'H264', bitrate: '8', progress_text: '进度：50%', position: '00:30:00', runtime: '01:00:00', play_method: '直接播放', media_info: '媒体：H264', machine_name: 'PVE节点', task_type: '备份', task_status: '成功', datastore_name: 'local', total_time: '3秒', total_size: '1 GB', job_id: 'daily', removed_garbage: '200 MB', update_title: 'Watchtower 更新', update_content: '发现 1 个镜像更新', updated_image_count: '1', updated_image_list: 'example/app:latest' }
+  const variablesForType = type => {
+    if (variableGroups[type]) return variableGroups[type]
+    if (String(type).startsWith('PVE.')) return ['machine_name', 'task_type', 'task_status', 'datastore_name', 'total_time', 'total_size', 'job_id', 'details', 'index_file_count', 'removed_garbage', 'original_data_usage', 'on_disk_usage', 'deduplication_factor']
+    if (String(type).startsWith('Watchtower.')) return ['update_title', 'update_content', 'server_name', 'updated_image_count', 'updated_image_list']
+    return ['notification_title', 'content', 'event_code', 'event_label', 'event', 'payload']
+  }
   openModal({
     eyebrow: template ? '编辑通知模板' : '新增通知模板', title: template ? original.name : '创建通知模板', wide: true,
     body: `<div class="dialog-grid"><div><div class="field-row">${formField('name', '模板名称', 'text', original.name, '例如：短信通知')}<label class="field"><span>事件类型</span><select name="type_choice">${typeOptions}<option value="__custom__" ${knownType ? '' : 'selected'}>自定义事件类型</option></select><input name="type_custom" type="text" value="${escapeHtml(knownType ? '' : original.type)}" placeholder="例如：MyService.Alert" autocomplete="off" ${knownType ? 'hidden' : ''}><small>内置事件按模块分组显示；也可以选择“自定义事件类型”手动输入。</small></label></div>${formField('description', '模板说明', 'text', original.description || '', '说明这个模板的使用场景')}${formField('title', '通知标题', 'textarea', original.title || '')}${formField('content', '通知内容', 'textarea', original.content || '')}<p class="form-note">保持现有 Jinja 模板变量不变，例如 <code>{{ device_name }}</code>。变量由实际推送来源填充。</p></div><aside class="preview-pane"><p class="eyebrow">News 实时预览</p><div class="news-preview"><div class="news-image">${icon('bell')}</div><div class="news-copy"><h3 id="preview-title">${escapeHtml(original.title || '通知标题')}</h3><p id="preview-content">${escapeHtml(original.content || '通知内容')}</p></div></div><p class="preview-note">这是企业微信 News 卡片的内容结构预览；图片和链接来自通道或推送请求。</p></aside></div>`,
@@ -674,24 +702,50 @@ function openTemplateForm(template = null) {
   })
   const typeChoice = $('#modal-body select[name="type_choice"]')
   const customType = $('#modal-body input[name="type_custom"]')
+  const variableHost = Object.assign(document.createElement('div'), { className: 'template-variable-host' })
+  $('#modal-body .field-row').after(variableHost)
+  let activeEditor = $('#modal-body textarea[name="content"]')
+  let activeSelection = { start: activeEditor.selectionStart || 0, end: activeEditor.selectionEnd || 0 }
+  const refreshVariableHelper = type => {
+    const variableNames = variablesForType(type)
+    variableHost.innerHTML = `<div class="variable-helper"><div class="helper-heading"><strong>可用变量</strong><small>点击插入到当前编辑框 · ${escapeHtml(type || '自定义事件')}</small></div><div class="variable-list">${variableNames.map(name => `<button type="button" class="variable-chip" data-variable="${escapeHtml(name)}">{{ ${escapeHtml(name)} }}</button>`).join('')}</div></div>`
+    variableHost.querySelectorAll('[data-variable]').forEach(button => button.addEventListener('click', () => {
+      const field = activeEditor || $('#modal-body textarea[name="content"]')
+      const value = `{{ ${button.dataset.variable} }}`
+      const start = activeEditor === field ? activeSelection.start : field.value.length
+      const end = activeEditor === field ? activeSelection.end : start
+      field.value = field.value.slice(0, start) + value + field.value.slice(end)
+      field.focus(); field.selectionStart = field.selectionEnd = start + value.length
+      activeSelection = { start: start + value.length, end: start + value.length }
+      field.dispatchEvent(new Event('input'))
+    }))
+  }
+  const trackEditor = event => {
+    activeEditor = event.currentTarget
+    activeSelection = { start: activeEditor.selectionStart || 0, end: activeEditor.selectionEnd || 0 }
+  }
+  $('#modal-body').querySelectorAll('textarea[name="title"], textarea[name="content"]').forEach(field => {
+    field.addEventListener('focus', trackEditor)
+    field.addEventListener('select', trackEditor)
+    field.addEventListener('click', trackEditor)
+    field.addEventListener('input', trackEditor)
+    field.addEventListener('keyup', trackEditor)
+  })
+  refreshVariableHelper(typeChoice.value === '__custom__' ? customType.value : typeChoice.value)
   typeChoice.addEventListener('change', () => {
     const custom = typeChoice.value === '__custom__'
     customType.hidden = !custom
     if (!custom && typeChoice.value) customType.value = typeChoice.value
+    refreshVariableHelper(custom ? customType.value : typeChoice.value)
   })
-  const renderExample = value => String(value || '').replace(/{{\s*([\w]+)\s*}}/g, (_, name) => examples[name] ?? `{{ ${name} }}`).replace(/{%[^%]*%}/g, '')
+  customType.addEventListener('input', () => refreshVariableHelper(customType.value))
+  const renderExample = value => String(value || '').replace(/{{\s*([A-Za-z_]\w*(?:\.[A-Za-z_]\w*)*)\s*}}/g, (_, name) => examples[name] ?? `{{ ${name} }}`).replace(/{%[^%]*%}/g, '')
   const updatePreview = () => {
     $('#preview-title').textContent = renderExample($('#modal-body [name="title"]').value) || '通知标题'
     $('#preview-content').textContent = renderExample($('#modal-body [name="content"]').value) || '通知内容'
   }
   $('#modal-body [name="title"]').addEventListener('input', updatePreview)
   $('#modal-body [name="content"]').addEventListener('input', updatePreview)
-  $('#modal-body .field-row').after(Object.assign(document.createElement('div'), { className: 'template-variable-host', innerHTML: variableHelper }))
-  $('#modal-body').querySelectorAll('[data-variable]').forEach(button => button.addEventListener('click', () => {
-    const field = document.activeElement?.matches('textarea[name="title"], textarea[name="content"]') ? document.activeElement : $('#modal-body textarea[name="content"]')
-    const value = `{{ ${button.dataset.variable} }}`; const start = field.selectionStart ?? field.value.length
-    field.value = field.value.slice(0, start) + value + field.value.slice(field.selectionEnd ?? start); field.focus(); field.selectionStart = field.selectionEnd = start + value.length; field.dispatchEvent(new Event('input'))
-  }))
 }
 
 function isSecretField(name) {
