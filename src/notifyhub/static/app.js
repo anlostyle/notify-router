@@ -196,7 +196,46 @@ async function copyText(value) {
 function setTheme(theme) {
   document.documentElement.dataset.theme = theme
   localStorage.setItem('notify-theme', theme)
-  $('#theme-icon')?.setAttribute('href', theme === 'dark' ? '#i-sun' : '#i-moon')
+  const icon = theme === 'dark' ? '#i-sun' : '#i-moon'
+  $('#theme-icon')?.setAttribute('href', icon)
+  $('#login-theme-icon')?.setAttribute('href', icon)
+}
+
+const PALETTES = [
+  ['靛蓝', '#4f46e5', '#3730a3'], ['海蓝', '#2563eb', '#1d4ed8'],
+  ['青色', '#0891b2', '#0e7490'], ['翡翠', '#059669', '#047857'],
+  ['琥珀', '#d97706', '#b45309'], ['珊瑚', '#ea580c', '#c2410c'],
+  ['玫红', '#e11d48', '#be123c'], ['紫罗兰', '#7c3aed', '#6d28d9'],
+  ['洋红', '#c026d3', '#a21caf'], ['蓝灰', '#64748b', '#475569'],
+]
+
+function setPalette(index) {
+  index = PALETTES[index] ? index : 7
+  const item = PALETTES[index]
+  document.documentElement.style.setProperty('--primary', item[1])
+  document.documentElement.style.setProperty('--primary-strong', item[2])
+  document.documentElement.style.setProperty('--primary-soft', `${item[1]}26`)
+  document.documentElement.style.setProperty('--primary-grad', `linear-gradient(180deg, ${item[1]}, ${item[2]})`)
+  document.documentElement.style.setProperty('--nav-active-bg', `${item[1]}26`)
+  document.documentElement.style.setProperty('--nav-active-text', item[1])
+  document.documentElement.style.setProperty('--nav-badge-bg', `${item[1]}20`)
+  document.documentElement.style.setProperty('--nav-badge-text', item[1])
+  document.querySelectorAll('.brand-mark').forEach(node => { node.style.background = `linear-gradient(145deg, ${item[1]}, ${item[2]})` })
+  localStorage.setItem('notify-palette', String(index))
+}
+
+function togglePaletteMenu(button) {
+  const existing = $('#palette-menu')
+  if (existing) return existing.remove()
+  const selected = Number(localStorage.getItem('notify-palette') || 7)
+  const menu = document.createElement('div')
+  menu.id = 'palette-menu'
+  menu.className = 'palette-menu'
+  menu.innerHTML = PALETTES.map((item, index) => `<button class="palette-item ${index === selected ? 'active' : ''}" data-palette="${index}"><i class="palette-dot" style="background:${item[1]}"></i>${item[0]}</button>`).join('')
+  document.body.append(menu)
+  const rect = button.getBoundingClientRect()
+  menu.style.top = `${Math.min(rect.bottom + 8, window.innerHeight - menu.offsetHeight - 12)}px`
+  menu.style.right = `${Math.max(12, window.innerWidth - rect.right)}px`
 }
 
 function currentPage() {
@@ -208,6 +247,7 @@ function showLogin() {
   clearInterval(state.logTimer)
   $('#app').hidden = true
   $('#login-view').hidden = false
+  document.body.classList.remove('auth-pending')
   setTimeout(() => $('#login-form input[name="username"]')?.focus(), 40)
 }
 
@@ -215,6 +255,7 @@ async function showApp(session) {
   state.session = session
   $('#login-view').hidden = true
   $('#app').hidden = false
+  document.body.classList.remove('auth-pending')
   $('#username').textContent = session.username || 'admin'
   $('#user-avatar').textContent = (session.username || 'A').slice(0, 1).toUpperCase()
   await loadCore()
@@ -845,6 +886,17 @@ async function handleAction(action, target) {
   if (action === 'close-menu') return closeMobileMenu()
   if (action === 'close-modal') return closeModal()
   if (action === 'toggle-theme') return setTheme(document.documentElement.dataset.theme === 'dark' ? 'light' : 'dark')
+  if (action === 'toggle-palette') return togglePaletteMenu(target)
+  if (action === 'restart-service') return confirmModal('重启 Notify Router', '确定要重启服务吗？当前通知会在服务恢复后继续处理。', async () => {
+    await api('/api/admin/restart', { method: 'POST' })
+    toast('服务正在重启', '页面将在服务恢复后自动刷新')
+    await delay(1200)
+    for (let attempt = 0; attempt < 30; attempt += 1) {
+      try { if ((await fetch('/healthz', { cache: 'no-store' })).ok) return location.reload() } catch {}
+      await delay(1000)
+    }
+    location.reload()
+  })
   if (action === 'user-menu') { $('#user-menu').hidden = !$('#user-menu').hidden; return }
   if (action === 'logout') {
     await api('/api/admin/logout', { method: 'POST' })
@@ -946,8 +998,17 @@ $('#modal-form').addEventListener('submit', async event => {
 })
 
 document.addEventListener('click', async event => {
+  const palette = event.target.closest('[data-palette]')
+  if (palette) {
+    setPalette(Number(palette.dataset.palette))
+    $('#palette-menu')?.remove()
+    return
+  }
   const target = event.target.closest('[data-action]')
-  if (!target) return
+  if (!target) {
+    if (!event.target.closest('#palette-menu')) $('#palette-menu')?.remove()
+    return
+  }
   try { await handleAction(target.dataset.action, target) } catch (reason) { toast('操作失败', reason.message, 'error') }
 })
 
@@ -978,6 +1039,7 @@ window.addEventListener('hashchange', () => renderPage().catch(reason => toast('
 async function boot() {
   const preferred = localStorage.getItem('notify-theme') || (matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light')
   setTheme(preferred)
+  setPalette(Number(localStorage.getItem('notify-palette') || 7))
   try {
     const session = await api('/api/admin/session')
     if (session.authenticated) await showApp(session)
