@@ -443,11 +443,38 @@ function renderRoutes() {
     <tr><td data-label="通道"><div class="cell-title"><strong>${escapeHtml(route.route_name)}</strong><small>${escapeHtml(route.route_id)}</small></div></td><td data-label="发送渠道">${(route.channel_name || []).map(name => `<span class="tag purple">${escapeHtml(name)}</span>`).join(' ') || '—'}</td><td data-label="绑定模板"><span class="truncate">${escapeHtml((route.bind_template || []).join('、') || '直接透传消息')}</span></td><td data-label="状态"><span class="status-badge ${route.active === false ? 'inactive' : 'active'}">${route.active === false ? '已停用' : '运行中'}</span></td><td data-label="操作"><div class="inline-actions"><button class="icon-button" data-action="copy-route" data-id="${escapeHtml(route.route_id)}" aria-label="复制接口">${icon('copy')}</button><button class="icon-button" data-action="edit-route" data-id="${escapeHtml(route.route_id)}" aria-label="编辑">${icon('edit')}</button><button class="icon-button danger" data-action="delete-route" data-id="${escapeHtml(route.route_id)}" aria-label="删除">${icon('trash')}</button></div></td></tr>`).join('')}</tbody></table></div>`
 }
 
+const TEMPLATE_PREVIEW_EXAMPLES = {
+  'Emby.PlaybackStart': {
+    event_label: '开始播放', media_info: '媒体：4K HEVC', file_info: '文件：电影 | 12.8 GB | MKV', progress_bar: '●●●●●●●●●●●●●○○○○○○○○○○○○○○', progress_text: '进度：50.00% | 余60分钟 | 共120分钟 | 直接播放', device_play_info: '设备：Emby | 客厅电视 | 家庭影院',
+  },
+  'Emby.PlaybackEnd': {
+    event_label: '停止播放', media_info: '媒体：4K HEVC', file_info: '文件：电影 | 12.8 GB | MKV', progress_bar: '●●●●●●●●●●●●●●●●●●●●●○○○○○○', progress_text: '进度：78.00% | 余26分钟 | 共120分钟', device_play_info: '设备：Emby | 客厅电视 | 家庭影院',
+  },
+  'Emby.LibraryNewMovie': {
+    event_label: '入库', date_text: '入库：2026-09-02 星期三 18:00:00', premiere_text: '首映：2025-08-20', media_info: '媒体：4K HEVC', server_info: '设备：家庭影院 | 4.8.0', film_info: '影片：2025 | 8.6 | 剧情·科幻', overview_text: '简介：这是一段示例影片简介。',
+  },
+  'Emby.LibraryNewSeries': {
+    event_label: '入库', item_type_name: '剧集', item_name: '示例剧集', episode_count: '12', date_text: '入库：2026-09-02 星期三 18:00:00', premiere_text: '首映：2025-08-20', server_info: '设备：家庭影院 | 4.8.0', film_info: '影片：2025 | 9.0 | 剧情·科幻', overview_text: '简介：这是一段示例剧集简介。',
+  },
+}
+
+const TEMPLATE_PREVIEW_DEFAULTS = {
+  notification_title: '用户开始播放：示例电影', content: '媒体库：电影 · 设备：手机', event_code: 'playback.start', event_label: '开始播放', event: '开始播放', username: '用户', user: '用户', title: '示例电影', item_name: '示例电影', item_type_name: '电影', item_type: 'Movie', year: '2025', year_label: '(2025)', genres: '剧情、科幻', genres_text: '剧情·科幻', overview: '这是一段示例简介。', server_name: '家庭影院', server_version: '4.8.0', server_info: '设备：家庭影院 | 4.8.0', device: '手机客户端', device_name: '手机客户端', client: 'Emby', size: '2 GB', container: 'H264', bitrate: '8', progress_bar: '●●●●●●●●●●●●●○○○○○○○○○○○○○○', progress_text: '进度：50%', position: '00:30:00', runtime: '01:00:00', play_method: '直接播放', media_info: '媒体：H264', file_info: '文件：电影 | 2 GB | MKV', date_text: '时间：2026-09-02 星期三 18:00:00', premiere_text: '首映：2025-08-20', device_play_info: '设备：Emby | 客厅电视 | 家庭影院', address_info: '地址：192.0.2.1 | 本地网络', film_info: '影片：2025 | 8.6 | 剧情·科幻', people_text: '演员：示例演员', overview_text: '简介：这是一段示例简介。', machine_name: 'PVE节点', task_type: '备份', task_status: '成功', datastore_name: 'local', total_time: '3秒', total_size: '1 GB', job_id: 'daily', removed_garbage: '200 MB', update_title: 'Watchtower 更新', update_content: '发现 1 个镜像更新', updated_image_count: '1', updated_image_list: 'example/app:latest',
+}
+
+function renderTemplateExample(value, type) {
+  const examples = { ...TEMPLATE_PREVIEW_DEFAULTS, ...(TEMPLATE_PREVIEW_EXAMPLES[type] || {}) }
+  return String(value || '')
+    .replace(/{{\s*\[([^\]]+)]\s*\|\s*select\s*\|\s*join\(['"]\\n['"]\)\s*}}/g, (_, names) => names.split(',').map(name => examples[name.trim()] || '').filter(Boolean).join('\n'))
+    .replace(/{{\s*([A-Za-z_]\w*(?:\.[A-Za-z_]\w*)*)\s*}}/g, (_, name) => examples[name] ?? `{{ ${name} }}`)
+    .replace(/{%[^%]*%}/g, '')
+}
+
 function renderTemplates() {
   const templates = state.templates.filter(item => matches(item.name, item.type, item.description, item.title, item.content))
   if (!templates.length) return emptyState('file', state.query ? '没有匹配的通知模板' : '还没有通知模板', state.query ? '请尝试其他关键词' : '创建模板统一管理消息格式')
   return `<div class="entity-grid">${templates.map(template => `
-    <article class="entity-card"><div class="entity-head"><span class="entity-icon">${icon('file')}</span><div class="entity-title"><h3>${escapeHtml(template.name)}</h3><p>${escapeHtml(template.type || '通用模板')}</p></div></div><div class="entity-body"><strong class="truncate">${escapeHtml(template.title || '无标题')}</strong><p class="truncate">${escapeHtml(template.description || template.content || '暂无说明')}</p></div><div class="entity-actions"><span class="tag purple">Jinja</span><span class="spacer"></span><div class="inline-actions"><button class="icon-button" data-action="edit-template" data-name="${escapeHtml(template.name)}" aria-label="编辑">${icon('edit')}</button><button class="icon-button danger" data-action="delete-template" data-name="${escapeHtml(template.name)}" aria-label="删除">${icon('trash')}</button></div></div></article>`).join('')}</div>`
+    <article class="entity-card"><div class="entity-head"><span class="entity-icon">${icon('file')}</span><div class="entity-title"><h3>${escapeHtml(template.name)}</h3><p>${escapeHtml(template.type || '通用模板')}</p></div></div><div class="entity-body"><strong class="truncate">${escapeHtml(renderTemplateExample(template.title, template.type) || '无标题')}</strong><p class="truncate">${escapeHtml(renderTemplateExample(template.content, template.type) || template.description || '暂无说明')}</p></div><div class="entity-actions"><span class="tag purple">Jinja</span><span class="spacer"></span><div class="inline-actions"><button class="icon-button" data-action="edit-template" data-name="${escapeHtml(template.name)}" aria-label="编辑">${icon('edit')}</button><button class="icon-button danger" data-action="delete-template" data-name="${escapeHtml(template.name)}" aria-label="删除">${icon('trash')}</button></div></div></article>`).join('')}</div>`
 }
 
 function renderPlugins() {
@@ -679,7 +706,6 @@ function openTemplateForm(template = null) {
     'Emby.SystemStartup': [...embyBaseVariables],
     'Emby.SystemUpdateAvailable': [...embyBaseVariables, 'new_version', 'current_version_text', 'new_version_text'],
   }
-  const examples = { notification_title: '用户开始播放：示例电影', content: '媒体库：电影 · 设备：手机', event_code: 'playback.start', event_label: '开始播放', event: '开始播放', username: '用户', user: '用户', title: '示例电影', item_name: '示例电影', item_type_name: '电影', item_type: 'Movie', year: '2025', year_label: '(2025)', genres: '剧情、科幻', genres_text: '剧情·科幻', overview: '这是一段示例简介。', server_name: '家庭影院', server_version: '4.8.0', device: '手机客户端', device_name: '手机客户端', client: 'Emby', size: '2 GB', container: 'H264', bitrate: '8', progress_text: '进度：50%', position: '00:30:00', runtime: '01:00:00', play_method: '直接播放', media_info: '媒体：H264', machine_name: 'PVE节点', task_type: '备份', task_status: '成功', datastore_name: 'local', total_time: '3秒', total_size: '1 GB', job_id: 'daily', removed_garbage: '200 MB', update_title: 'Watchtower 更新', update_content: '发现 1 个镜像更新', updated_image_count: '1', updated_image_list: 'example/app:latest' }
   const variablesForType = type => {
     if (variableGroups[type]) return variableGroups[type]
     if (String(type).startsWith('PVE.')) return ['machine_name', 'task_type', 'task_status', 'datastore_name', 'total_time', 'total_size', 'job_id', 'details', 'index_file_count', 'removed_garbage', 'original_data_usage', 'on_disk_usage', 'deduplication_factor']
@@ -688,7 +714,7 @@ function openTemplateForm(template = null) {
   }
   openModal({
     eyebrow: template ? '编辑通知模板' : '新增通知模板', title: template ? original.name : '创建通知模板', wide: true,
-    body: `<div class="dialog-grid"><div><div class="field-row">${formField('name', '模板名称', 'text', original.name, '例如：短信通知')}<label class="field"><span>事件类型</span><select name="type_choice">${typeOptions}<option value="__custom__" ${knownType ? '' : 'selected'}>自定义事件类型</option></select><input name="type_custom" type="text" value="${escapeHtml(knownType ? '' : original.type)}" placeholder="例如：MyService.Alert" autocomplete="off" ${knownType ? 'hidden' : ''}><small>内置事件按模块分组显示；也可以选择“自定义事件类型”手动输入。</small></label></div>${formField('description', '模板说明', 'text', original.description || '', '说明这个模板的使用场景')}${formField('title', '通知标题', 'textarea', original.title || '')}${formField('content', '通知内容', 'textarea', original.content || '')}<p class="form-note">保持现有 Jinja 模板变量不变，例如 <code>{{ device_name }}</code>。变量由实际推送来源填充。</p></div><aside class="preview-pane"><p class="eyebrow">News 实时预览</p><div class="news-preview"><div class="news-image">${icon('bell')}</div><div class="news-copy"><h3 id="preview-title">${escapeHtml(original.title || '通知标题')}</h3><p id="preview-content">${escapeHtml(original.content || '通知内容')}</p></div></div><p class="preview-note">这是企业微信 News 卡片的内容结构预览；图片和链接来自通道或推送请求。</p></aside></div>`,
+    body: `<div class="dialog-grid"><div><div class="field-row">${formField('name', '模板名称', 'text', original.name, '例如：短信通知')}<label class="field"><span>事件类型</span><select name="type_choice">${typeOptions}<option value="__custom__" ${knownType ? '' : 'selected'}>自定义事件类型</option></select><input name="type_custom" type="text" value="${escapeHtml(knownType ? '' : original.type)}" placeholder="例如：MyService.Alert" autocomplete="off" ${knownType ? 'hidden' : ''}><small>内置事件按模块分组显示；也可以选择“自定义事件类型”手动输入。</small></label></div>${formField('description', '模板说明', 'text', original.description || '', '说明这个模板的使用场景')}${formField('title', '通知标题', 'textarea', original.title || '')}${formField('content', '通知内容', 'textarea', original.content || '')}<p class="form-note">保持现有 Jinja 模板变量不变，例如 <code>{{ device_name }}</code>。变量由实际推送来源填充。</p></div><aside class="preview-pane"><p class="eyebrow">News 实时预览</p><div class="news-preview"><div class="news-image">${icon('bell')}</div><div class="news-copy"><h3 id="preview-title">${escapeHtml(renderTemplateExample(original.title, selectedType) || '通知标题')}</h3><p id="preview-content">${escapeHtml(renderTemplateExample(original.content, selectedType) || '通知内容')}</p></div></div><p class="preview-note">这是企业微信 News 卡片的内容结构预览；图片和链接来自通道或推送请求。</p></aside></div>`,
     onSubmit: async form => {
       const data = new FormData(form)
       const name = String(data.get('name') || '').trim()
@@ -744,15 +770,17 @@ function openTemplateForm(template = null) {
     customType.hidden = !custom
     if (!custom && typeChoice.value) customType.value = typeChoice.value
     refreshVariableHelper(custom ? customType.value : typeChoice.value)
+    updatePreview()
   })
-  customType.addEventListener('input', () => refreshVariableHelper(customType.value))
-  const renderExample = value => String(value || '').replace(/{{\s*([A-Za-z_]\w*(?:\.[A-Za-z_]\w*)*)\s*}}/g, (_, name) => examples[name] ?? `{{ ${name} }}`).replace(/{%[^%]*%}/g, '')
+  customType.addEventListener('input', () => { refreshVariableHelper(customType.value); updatePreview() })
   const updatePreview = () => {
-    $('#preview-title').textContent = renderExample($('#modal-body [name="title"]').value) || '通知标题'
-    $('#preview-content').textContent = renderExample($('#modal-body [name="content"]').value) || '通知内容'
+    const type = typeChoice.value === '__custom__' ? customType.value : typeChoice.value
+    $('#preview-title').textContent = renderTemplateExample($('#modal-body [name="title"]').value, type) || '通知标题'
+    $('#preview-content').textContent = renderTemplateExample($('#modal-body [name="content"]').value, type) || '通知内容'
   }
   $('#modal-body [name="title"]').addEventListener('input', updatePreview)
   $('#modal-body [name="content"]').addEventListener('input', updatePreview)
+  updatePreview()
 }
 
 function isSecretField(name) {

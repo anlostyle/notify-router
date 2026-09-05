@@ -4,8 +4,10 @@ import logging
 import httpx
 
 import xml.etree.ElementTree as ET
-from datetime import datetime
+from datetime import datetime, timezone
+from email.utils import parsedate_to_datetime
 from typing import List, Dict, Optional
+from zoneinfo import ZoneInfo
 
 from notifyhub.controller.server import Server
 
@@ -13,6 +15,24 @@ from .utils import config
 
 logger = logging.getLogger(__name__)
 server = Server()
+BEIJING_TZ = ZoneInfo("Asia/Shanghai")
+
+
+def format_pubdate(value: str) -> str:
+    """Convert an RSS RFC 822 date (usually GMT) to Beijing time."""
+    raw = str(value or "").strip()
+    if not raw:
+        return ""
+    try:
+        parsed = parsedate_to_datetime(raw)
+        if parsed is None:
+            return raw
+        if parsed.tzinfo is None:
+            parsed = parsed.replace(tzinfo=timezone.utc)
+        return parsed.astimezone(BEIJING_TZ).strftime("%Y-%m-%d %H:%M:%S（北京时间）")
+    except (TypeError, ValueError, OverflowError):
+        logger.warning("RSS 发布时间格式无法识别，保留原值: %s", raw)
+        return raw
 
 class RSSMonitor:
     def __init__(self):
@@ -116,7 +136,7 @@ class RSSMonitor:
                     
                     # 提取发布时间
                     pubdate_elem = item.find('pubDate')
-                    pubdate = pubdate_elem.text if pubdate_elem is not None else ''
+                    pubdate = format_pubdate(pubdate_elem.text if pubdate_elem is not None else '')
                     
                     # 提取作者
                     creator_elem = item.find('.//{http://purl.org/dc/elements/1.1/}creator')

@@ -157,6 +157,11 @@ def test_fresh_store_seeds_bundled_emby_templates(tmp_path):
     rendered = store.render_event({"bind_template": ["emby_playback_start"]}, template_type, context)
     assert rendered == ("User 开始播放电影：Film", "文件：电影")
 
+    template = next(item for item in store.templates if item["name"] == "emby_playback_start")
+    assert template["title"] != "{{ notification_title }}"
+    assert "{{ username }}" in template["title"]
+    assert "file_info" in template["content"]
+
 
 def test_fresh_store_seeds_all_native_templates(tmp_path):
     store = Store(tmp_path)

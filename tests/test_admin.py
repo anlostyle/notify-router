@@ -14,6 +14,14 @@ def test_login_page_does_not_prefill_admin_username():
     assert "form.elements.username.value" not in script
 
 
+def test_template_cards_and_editor_render_event_examples():
+    script = files("notifyhub").joinpath("static/app.js").read_text(encoding="utf-8")
+    assert "renderTemplateExample(template.title, template.type)" in script
+    assert "names.split(',')" in script
+    assert "file_info: '文件：电影 | 2 GB | MKV'" in script
+    assert "updatePreview()" in script
+
+
 def test_admin_login_returns_plaintext_config_and_can_queue_channel_test(tmp_path, monkeypatch):
     monkeypatch.setenv("WORKDIR", str(tmp_path))
     monkeypatch.setenv("NH_USER", "admin")
