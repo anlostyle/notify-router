@@ -77,6 +77,11 @@ from each of the previous four weeks. Each archive contains:
 - `db/main.db`
 - `conf/config.json`
 - `conf/notify_template.json`
+- `conf/appearance.json` and the referenced files under `backgrounds/`
+
+Instance appearance is stored in `data/conf/appearance.json` and
+`data/backgrounds`. Daily backups include it; the console's JSON configuration
+import and export intentionally exclude appearance settings and binary images.
 
 The console's `record_retention_days` setting removes older completed delivery
 history only after the daily backup succeeds. Pending and retrying deliveries

@@ -435,22 +435,6 @@ def admin_logout(response: Response):
     return {"authenticated": False}
 
 
-@app.get("/api/admin/note", dependencies=[Depends(admin_auth)])
-def admin_note():
-    return {"note": store.admin_note}
-
-
-@app.put("/api/admin/note", dependencies=[Depends(admin_auth)])
-def save_admin_note(payload: dict = Body(...)):
-    note = payload.get("note") if isinstance(payload, dict) else None
-    if not isinstance(note, str):
-        raise HTTPException(400, "备注内容必须是文本")
-    if len(note) > 10_000:
-        raise HTTPException(400, "备注不能超过 10000 个字符")
-    store.save_admin_note(note)
-    return {"message": "备注已保存", "note": note}
-
-
 @app.get("/api/admin/appearance", dependencies=[Depends(admin_auth)])
 def admin_appearance():
     return store.appearance

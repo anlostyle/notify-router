@@ -666,39 +666,6 @@ function confirmModal(title, message, action, danger = false) {
   $('#modal-submit').classList.toggle('primary', !danger)
 }
 
-async function openAdminNote() {
-  $('#user-menu').hidden = true
-  $('[data-action="user-menu"]')?.setAttribute('aria-expanded', 'false')
-  openModal({
-    eyebrow: '管理员工具',
-    title: '备注',
-    body: `<p class="form-note">用于临时记录实例相关事项，保存后同一实例的其他设备也可查看。</p><label class="field admin-note-field"><span>记事内容</span><textarea name="note" rows="12" maxlength="10000" placeholder="正在读取备注…" disabled></textarea><small id="admin-note-count">0 / 10000</small></label>`,
-    submitText: '保存备注',
-    onSubmit: async form => {
-      const note = String(new FormData(form).get('note') || '')
-      const result = await api('/api/admin/note', { method: 'PUT', body: JSON.stringify({ note }) })
-      closeModal()
-      toast(result.message || '备注已保存')
-    },
-  })
-  const textarea = $('#modal-body textarea[name="note"]')
-  const count = $('#admin-note-count')
-  const syncCount = () => { if (count) count.textContent = `${textarea.value.length} / 10000` }
-  textarea.addEventListener('input', syncCount)
-  try {
-    const data = await api('/api/admin/note')
-    if (!textarea.isConnected) return
-    textarea.value = data.note || ''
-    textarea.disabled = false
-    textarea.placeholder = '例如：待测试的模板、临时维护安排或上游说明'
-    syncCount()
-    textarea.focus()
-  } catch (error) {
-    closeModal()
-    toast('备注读取失败', error.message, 'error')
-  }
-}
-
 async function saveConfig(nextConfig, message = '配置已保存') {
   await api('/api/admin/config', { method: 'PUT', body: JSON.stringify(nextConfig) })
   toast(message)
@@ -1236,7 +1203,6 @@ async function handleAction(action, target) {
     target.setAttribute('aria-expanded', String(!menu.hidden))
     return
   }
-  if (action === 'admin-note') return openAdminNote()
   if (action === 'logout') {
     await api('/api/admin/logout', { method: 'POST' })
     $('#user-menu').hidden = true

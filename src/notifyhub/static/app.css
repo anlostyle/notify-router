@@ -437,8 +437,6 @@ svg { width: 20px; height: 20px; fill: none; stroke: currentColor; stroke-width:
   transition: border-color .15s, box-shadow .15s, background .15s;
 }
 .field textarea { min-height: 105px; resize: vertical; line-height: 1.55; }
-.admin-note-field textarea { min-height: 280px; }
-.admin-note-field small { justify-self: end; font-variant-numeric: tabular-nums; }
 .field input:focus, .field textarea:focus, .field select:focus { border-color: var(--primary); background: var(--surface); box-shadow: var(--ring); }
 .field input::placeholder, .field textarea::placeholder { color: var(--muted-2); }
 .field-row { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 15px; }

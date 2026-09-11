@@ -156,29 +156,6 @@ def test_admin_event_types_lists_registered_types(tmp_path, monkeypatch):
         client.close()
 
 
-def test_admin_note_requires_login_and_persists_on_the_instance(tmp_path, monkeypatch):
-    monkeypatch.setenv("WORKDIR", str(tmp_path))
-    monkeypatch.setenv("NH_USER", "admin")
-    monkeypatch.setenv("NH_PASSWORD", "test-password")
-    main = importlib.import_module("notifyhub.main")
-    test_store = Store(tmp_path)
-    monkeypatch.setattr(main, "store", test_store)
-    client = TestClient(main.app)
-    try:
-        assert client.get("/api/admin/note").status_code == 401
-        assert client.put("/api/admin/note", json={"note": "未登录"}).status_code == 401
-        assert client.post("/api/admin/login", json={"username": "admin", "password": "test-password"}).status_code == 200
-        assert client.get("/api/admin/note").json() == {"note": ""}
-
-        response = client.put("/api/admin/note", json={"note": "周日维护通知服务"})
-        assert response.status_code == 200
-        assert Store(tmp_path).admin_note == "周日维护通知服务"
-        assert client.get("/api/admin/note").json() == {"note": "周日维护通知服务"}
-        assert client.put("/api/admin/note", json={"note": "x" * 10_001}).status_code == 400
-    finally:
-        client.close()
-
-
 def test_appearance_settings_and_background_gallery_are_instance_scoped(tmp_path, monkeypatch):
     monkeypatch.setenv("WORKDIR", str(tmp_path))
     monkeypatch.setenv("NH_USER", "admin")
@@ -197,7 +174,8 @@ def test_appearance_settings_and_background_gallery_are_instance_scoped(tmp_path
         assert client.post("/api/admin/login", json={"username": "admin", "password": "test-password"}).status_code == 200
         invalid = client.post("/api/admin/appearance/backgrounds", files={"background": ("bad.txt", b"text", "text/plain")})
         assert invalid.status_code == 400
-        image = b"\x89PNG\r\n\x1a\n" + b"notify-router-background"
+        assert client.post("/api/admin/appearance/backgrounds", files={"background": ("fake.png", b"\x89PNG\r\n\x1a\n", "image/png")}).status_code == 400
+        image = bytes.fromhex("89504e470d0a1a0a0000000d49484452000000010000000108060000001f15c4890000000d4944415408d763f8cfc0f01f00050001ff89993d1d0000000049454e44ae426082")
         uploaded = client.post("/api/admin/appearance/backgrounds", files={"background": ("background.png", image, "image/png")})
         assert uploaded.status_code == 200
         background = uploaded.json()["appearance_background"]

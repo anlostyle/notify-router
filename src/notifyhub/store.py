@@ -88,11 +88,9 @@ class Store:
         self.backgrounds_dir = self.data_dir / "backgrounds"
         self.config_path = self.conf_dir / "config.json"
         self.templates_path = self.conf_dir / "notify_template.json"
-        self.admin_note_path = self.conf_dir / "admin-note.json"
         self.appearance_path = self.conf_dir / "appearance.json"
         self.db_path = self.db_dir / "main.db"
         self._config_lock = threading.Lock()
-        self._admin_note_lock = threading.Lock()
         self._appearance_lock = threading.RLock()
         self._prepare_files()
         self._prepare_db()
@@ -321,8 +319,6 @@ class Store:
                     archive.add(database_copy, arcname="db/main.db")
                     archive.add(self.config_path, arcname="conf/config.json")
                     archive.add(self.templates_path, arcname="conf/notify_template.json")
-                    if self.admin_note_path.exists():
-                        archive.add(self.admin_note_path, arcname="conf/admin-note.json")
                     if self.appearance_path.exists():
                         archive.add(self.appearance_path, arcname="conf/appearance.json")
                     for background in self.appearance.get("appearance_backgrounds", []):
@@ -400,32 +396,6 @@ class Store:
     def templates(self):
         return json.loads(self.templates_path.read_text(encoding="utf-8")).get("template", [])
 
-    @property
-    def admin_note(self):
-        with self._admin_note_lock:
-            try:
-                payload = json.loads(self.admin_note_path.read_text(encoding="utf-8"))
-            except (FileNotFoundError, OSError, json.JSONDecodeError):
-                return ""
-            note = payload.get("note") if isinstance(payload, dict) else ""
-            return note if isinstance(note, str) else ""
-
-    def save_admin_note(self, note):
-        if not isinstance(note, str):
-            raise ValueError("note must be a string")
-        if len(note) > 10_000:
-            raise ValueError("note must not exceed 10000 characters")
-        payload = {"note": note, "updated_at": localnow()}
-        temporary = self.admin_note_path.with_name(f".{self.admin_note_path.name}.tmp")
-        with self._admin_note_lock:
-            try:
-                temporary.write_text(json.dumps(payload, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
-                temporary.chmod(0o600)
-                temporary.replace(self.admin_note_path)
-                self.admin_note_path.chmod(0o600)
-            finally:
-                temporary.unlink(missing_ok=True)
-
     @staticmethod
     def _appearance_number(value, default):
         try:
@@ -495,15 +465,15 @@ class Store:
 
     @staticmethod
     def _image_extension(content):
-        if content.startswith(b"\x89PNG\r\n\x1a\n"):
+        if len(content) >= 24 and content.startswith(b"\x89PNG\r\n\x1a\n") and content[8:16] == b"\x00\x00\x00\rIHDR" and int.from_bytes(content[16:20], "big") and int.from_bytes(content[20:24], "big"):
             return "png"
-        if content.startswith(b"\xff\xd8\xff"):
+        if len(content) >= 4 and content.startswith(b"\xff\xd8\xff") and content.endswith(b"\xff\xd9"):
             return "jpg"
-        if content.startswith((b"GIF87a", b"GIF89a")):
+        if len(content) >= 10 and content.startswith((b"GIF87a", b"GIF89a")) and int.from_bytes(content[6:8], "little") and int.from_bytes(content[8:10], "little"):
             return "gif"
-        if len(content) >= 12 and content[:4] == b"RIFF" and content[8:12] == b"WEBP":
+        if len(content) >= 20 and content[:4] == b"RIFF" and content[8:12] == b"WEBP" and content[12:16] in {b"VP8 ", b"VP8L", b"VP8X"} and int.from_bytes(content[4:8], "little") + 8 == len(content):
             return "webp"
-        if len(content) >= 12 and content[4:8] == b"ftyp" and content[8:12] in {b"avif", b"avis"}:
+        if len(content) >= 16 and content[4:8] == b"ftyp" and 16 <= int.from_bytes(content[:4], "big") <= len(content) and any(content[index:index + 4] in {b"avif", b"avis"} for index in range(8, int.from_bytes(content[:4], "big"), 4)):
             return "avif"
         raise ValueError("background must be a PNG, JPEG, WebP, GIF or AVIF image")
 
