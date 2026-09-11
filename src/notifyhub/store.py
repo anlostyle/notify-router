@@ -1,4 +1,5 @@
 import ast
+import hashlib
 import json
 import re
 import shutil
@@ -17,6 +18,15 @@ from jinja2.sandbox import SandboxedEnvironment
 
 
 _jinja = SandboxedEnvironment(autoescape=False)
+_appearance_background_re = re.compile(r"^/api/appearance/background/([0-9a-f]{64}\.(?:png|jpg|webp|gif|avif))$")
+_appearance_defaults = {
+    "appearance_background": "",
+    "appearance_backgrounds": [],
+    "appearance_glass_opacity": 50,
+    "appearance_glass_brightness": 45,
+    "appearance_glass_blur": 10,
+    "appearance_mask_opacity": 50,
+}
 
 
 def default_templates():
@@ -75,10 +85,15 @@ class Store:
         self.conf_dir = self.data_dir / "conf"
         self.db_dir = self.data_dir / "db"
         self.plugins_dir = self.data_dir / "plugins"
+        self.backgrounds_dir = self.data_dir / "backgrounds"
         self.config_path = self.conf_dir / "config.json"
         self.templates_path = self.conf_dir / "notify_template.json"
+        self.admin_note_path = self.conf_dir / "admin-note.json"
+        self.appearance_path = self.conf_dir / "appearance.json"
         self.db_path = self.db_dir / "main.db"
         self._config_lock = threading.Lock()
+        self._admin_note_lock = threading.Lock()
+        self._appearance_lock = threading.RLock()
         self._prepare_files()
         self._prepare_db()
 
@@ -86,6 +101,7 @@ class Store:
         self.conf_dir.mkdir(parents=True, exist_ok=True)
         self.db_dir.mkdir(parents=True, exist_ok=True)
         self.plugins_dir.mkdir(parents=True, exist_ok=True)
+        self.backgrounds_dir.mkdir(parents=True, exist_ok=True)
         if not self.config_path.exists():
             self.config_path.write_text(
                 json.dumps(
@@ -305,6 +321,15 @@ class Store:
                     archive.add(database_copy, arcname="db/main.db")
                     archive.add(self.config_path, arcname="conf/config.json")
                     archive.add(self.templates_path, arcname="conf/notify_template.json")
+                    if self.admin_note_path.exists():
+                        archive.add(self.admin_note_path, arcname="conf/admin-note.json")
+                    if self.appearance_path.exists():
+                        archive.add(self.appearance_path, arcname="conf/appearance.json")
+                    for background in self.appearance.get("appearance_backgrounds", []):
+                        match = _appearance_background_re.fullmatch(background)
+                        path = self.backgrounds_dir / match.group(1) if match else None
+                        if path and path.is_file():
+                            archive.add(path, arcname=f"backgrounds/{path.name}")
                 archive_copy.replace(target)
                 target.chmod(0o600)
             finally:
@@ -374,6 +399,163 @@ class Store:
     @property
     def templates(self):
         return json.loads(self.templates_path.read_text(encoding="utf-8")).get("template", [])
+
+    @property
+    def admin_note(self):
+        with self._admin_note_lock:
+            try:
+                payload = json.loads(self.admin_note_path.read_text(encoding="utf-8"))
+            except (FileNotFoundError, OSError, json.JSONDecodeError):
+                return ""
+            note = payload.get("note") if isinstance(payload, dict) else ""
+            return note if isinstance(note, str) else ""
+
+    def save_admin_note(self, note):
+        if not isinstance(note, str):
+            raise ValueError("note must be a string")
+        if len(note) > 10_000:
+            raise ValueError("note must not exceed 10000 characters")
+        payload = {"note": note, "updated_at": localnow()}
+        temporary = self.admin_note_path.with_name(f".{self.admin_note_path.name}.tmp")
+        with self._admin_note_lock:
+            try:
+                temporary.write_text(json.dumps(payload, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+                temporary.chmod(0o600)
+                temporary.replace(self.admin_note_path)
+                self.admin_note_path.chmod(0o600)
+            finally:
+                temporary.unlink(missing_ok=True)
+
+    @staticmethod
+    def _appearance_number(value, default):
+        try:
+            return max(0, min(100, int(value)))
+        except (TypeError, ValueError):
+            return default
+
+    @property
+    def appearance(self):
+        with self._appearance_lock:
+            try:
+                saved = json.loads(self.appearance_path.read_text(encoding="utf-8"))
+            except (FileNotFoundError, OSError, json.JSONDecodeError):
+                saved = {}
+            if not isinstance(saved, dict):
+                saved = {}
+            values = dict(_appearance_defaults)
+            backgrounds = []
+            saved_backgrounds = saved.get("appearance_backgrounds", [])
+            if not isinstance(saved_backgrounds, list):
+                saved_backgrounds = []
+            for value in saved_backgrounds:
+                match = _appearance_background_re.fullmatch(str(value or ""))
+                if match and (self.backgrounds_dir / match.group(1)).is_file() and value not in backgrounds:
+                    backgrounds.append(value)
+            values["appearance_backgrounds"] = backgrounds[-20:]
+            selected = str(saved.get("appearance_background") or "")
+            values["appearance_background"] = selected if selected in values["appearance_backgrounds"] else ""
+            for key in (
+                "appearance_glass_opacity",
+                "appearance_glass_brightness",
+                "appearance_glass_blur",
+                "appearance_mask_opacity",
+            ):
+                values[key] = self._appearance_number(saved.get(key), _appearance_defaults[key])
+            return values
+
+    def _write_appearance(self, values):
+        temporary = self.appearance_path.with_name(f".{self.appearance_path.name}.tmp")
+        try:
+            temporary.write_text(json.dumps(values, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+            temporary.chmod(0o600)
+            temporary.replace(self.appearance_path)
+            self.appearance_path.chmod(0o600)
+        finally:
+            temporary.unlink(missing_ok=True)
+
+    def save_appearance(self, payload):
+        if not isinstance(payload, dict):
+            raise ValueError("appearance must be an object")
+        with self._appearance_lock:
+            values = self.appearance
+            selected = str(payload.get("appearance_background", values["appearance_background"]) or "")
+            if selected and selected not in values["appearance_backgrounds"]:
+                raise ValueError("selected background is not in the instance gallery")
+            values["appearance_background"] = selected
+            for key in (
+                "appearance_glass_opacity",
+                "appearance_glass_brightness",
+                "appearance_glass_blur",
+                "appearance_mask_opacity",
+            ):
+                if key in payload:
+                    values[key] = self._appearance_number(payload[key], _appearance_defaults[key])
+            self._write_appearance(values)
+            return values
+
+    @staticmethod
+    def _image_extension(content):
+        if content.startswith(b"\x89PNG\r\n\x1a\n"):
+            return "png"
+        if content.startswith(b"\xff\xd8\xff"):
+            return "jpg"
+        if content.startswith((b"GIF87a", b"GIF89a")):
+            return "gif"
+        if len(content) >= 12 and content[:4] == b"RIFF" and content[8:12] == b"WEBP":
+            return "webp"
+        if len(content) >= 12 and content[4:8] == b"ftyp" and content[8:12] in {b"avif", b"avis"}:
+            return "avif"
+        raise ValueError("background must be a PNG, JPEG, WebP, GIF or AVIF image")
+
+    def save_appearance_background(self, content):
+        if not content or len(content) > 5 * 1024 * 1024:
+            raise ValueError("background image must be no larger than 5 MB")
+        extension = self._image_extension(content)
+        filename = f"{hashlib.sha256(content).hexdigest()}.{extension}"
+        url = f"/api/appearance/background/{filename}"
+        with self._appearance_lock:
+            target = self.backgrounds_dir / filename
+            if not target.exists():
+                temporary = target.with_name(f".{filename}.tmp")
+                try:
+                    temporary.write_bytes(content)
+                    temporary.replace(target)
+                    target.chmod(0o600)
+                finally:
+                    temporary.unlink(missing_ok=True)
+            values = self.appearance
+            backgrounds = [item for item in values["appearance_backgrounds"] if item != url]
+            backgrounds.append(url)
+            removed = backgrounds[:-20]
+            values["appearance_backgrounds"] = backgrounds[-20:]
+            values["appearance_background"] = url
+            self._write_appearance(values)
+            for item in removed:
+                match = _appearance_background_re.fullmatch(item)
+                if match:
+                    (self.backgrounds_dir / match.group(1)).unlink(missing_ok=True)
+            return values
+
+    def delete_appearance_background(self, filename):
+        if not re.fullmatch(r"[0-9a-f]{64}\.(?:png|jpg|webp|gif|avif)", str(filename or "")):
+            raise ValueError("invalid background filename")
+        url = f"/api/appearance/background/{filename}"
+        with self._appearance_lock:
+            values = self.appearance
+            if url not in values["appearance_backgrounds"]:
+                raise FileNotFoundError(filename)
+            values["appearance_backgrounds"] = [item for item in values["appearance_backgrounds"] if item != url]
+            if values["appearance_background"] == url:
+                values["appearance_background"] = ""
+            self._write_appearance(values)
+            (self.backgrounds_dir / filename).unlink(missing_ok=True)
+            return values
+
+    def appearance_background_path(self, filename):
+        if not re.fullmatch(r"[0-9a-f]{64}\.(?:png|jpg|webp|gif|avif)", str(filename or "")):
+            return None
+        path = self.backgrounds_dir / filename
+        return path if path.is_file() else None
 
     def save_templates(self, payload):
         self.validate_templates(payload)

@@ -3,13 +3,16 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
-  <meta name="theme-color" content="#111827">
+  <meta id="theme-color" name="theme-color" content="#0b0d12">
   <title>Notify · 通知管理中心</title>
-  <script>document.documentElement.dataset.theme=localStorage.getItem('notify-theme')||(matchMedia('(prefers-color-scheme: dark)').matches?'dark':'light')</script>
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='18' fill='%237c3aed'/%3E%3Cpath d='M18 46V18h8l12 17V18h8v28h-8L26 29v17z' fill='white'/%3E%3C/svg%3E" type="image/svg+xml">
+  <script>(()=>{const root=document.documentElement,theme=localStorage.getItem('notify-theme')||(matchMedia('(prefers-color-scheme: dark)').matches?'dark':'light'),colors=[['#4f46e5','#3730a3'],['#2563eb','#1d4ed8'],['#0891b2','#0e7490'],['#059669','#047857'],['#d97706','#b45309'],['#ea580c','#c2410c'],['#e11d48','#be123c'],['#7c3aed','#6d28d9'],['#c026d3','#a21caf'],['#64748b','#475569']],index=Number(localStorage.getItem('notify-palette')??7),color=colors[index]||colors[7];root.dataset.theme=theme;if(localStorage.getItem('notify-sidebar')==='collapsed')root.classList.add('sidebar-collapsed');root.style.setProperty('--primary',color[0]);root.style.setProperty('--primary-strong',color[1]);root.style.setProperty('--primary-soft',color[0]+'26');root.style.setProperty('--primary-grad',`linear-gradient(180deg,${color[0]},${color[1]})`);try{const a=JSON.parse(localStorage.getItem('notify-appearance')||'{}'),n=(key,fallback)=>Math.max(0,Math.min(100,Number(a[key]??fallback))),opacity=n('appearance_glass_opacity',50),brightness=n('appearance_glass_brightness',45),blur=n('appearance_glass_blur',10),mask=n('appearance_mask_opacity',50),background=/^\/api\/appearance\/background\/[0-9a-f]{64}\.(?:png|jpg|webp|gif|avif)$/.test(a.appearance_background||'')?a.appearance_background:'';root.style.setProperty('--glass-opacity',`${100-opacity}%`);root.style.setProperty('--glass-brightness',(0.65+brightness/100*.7).toFixed(2));root.style.setProperty('--glass-dim',(Math.max(0,(50-brightness)/50*.28)).toFixed(3));root.style.setProperty('--glass-light',(Math.max(0,(brightness-50)/50*.2)).toFixed(3));root.style.setProperty('--glass-blur',`${blur}px`);root.style.setProperty('--page-dim',(Math.max(0,(50-mask)/50*.72)).toFixed(3));root.style.setProperty('--page-light',(Math.max(0,(mask-50)/50*.28)).toFixed(3));root.style.setProperty('--instance-background',background?`url("${background}")`:'none');root.dataset.hasBackground=background?'true':'false'}catch{}document.querySelector('meta[name="theme-color"]')?.setAttribute('content',theme==='dark'?'#0b0d12':'#f4f5f8')})()</script>
+  <style>body.auth-pending #login-view,body.auth-pending #app{visibility:hidden}body.auth-pending{overflow:hidden}</style>
   <link rel="stylesheet" href="/static/app.css">
   <script defer src="/static/app.js"></script>
 </head>
 <body class="auth-pending">
+  <a class="skip-link" href="#page-content">跳到主要内容</a>
   <svg class="icon-sprite" aria-hidden="true">
     <symbol id="i-grid" viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="7" rx="2"/><rect x="14" y="3" width="7" height="7" rx="2"/><rect x="3" y="14" width="7" height="7" rx="2"/><rect x="14" y="14" width="7" height="7" rx="2"/></symbol>
     <symbol id="i-bell" viewBox="0 0 24 24"><path d="M18 8a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9"/><path d="M10 21h4"/></symbol>
@@ -30,12 +33,15 @@
     <symbol id="i-copy" viewBox="0 0 24 24"><rect x="8" y="8" width="12" height="12" rx="2"/><path d="M16 8V6a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2h2"/></symbol>
     <symbol id="i-refresh" viewBox="0 0 24 24"><path d="M20 7v5h-5M4 17v-5h5"/><path d="M6.1 8a7 7 0 0 1 11.6-1L20 12M4 12l2.3 5a7 7 0 0 0 11.6-1"/></symbol>
     <symbol id="i-menu" viewBox="0 0 24 24"><path d="M4 7h16M4 12h16M4 17h16"/></symbol>
+    <symbol id="i-sidebar-collapse" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M9 4v16M15 9l-3 3 3 3"/></symbol>
+    <symbol id="i-sidebar-expand" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M9 4v16M13 9l3 3-3 3"/></symbol>
     <symbol id="i-moon" viewBox="0 0 24 24"><path d="M20 15a8 8 0 0 1-11-11 9 9 0 1 0 11 11"/></symbol>
     <symbol id="i-sun" viewBox="0 0 24 24"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/></symbol>
     <symbol id="i-close" viewBox="0 0 24 24"><path d="m6 6 12 12M18 6 6 18"/></symbol>
     <symbol id="i-chevron" viewBox="0 0 24 24"><path d="m9 18 6-6-6-6"/></symbol>
     <symbol id="i-check" viewBox="0 0 24 24"><path d="m5 12 4 4L19 6"/></symbol>
     <symbol id="i-alert" viewBox="0 0 24 24"><path d="M12 3 2 21h20zM12 9v5M12 18h.01"/></symbol>
+    <symbol id="i-note" viewBox="0 0 24 24"><path d="M5 3h14a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2"/><path d="M8 8h8M8 12h8M8 16h5"/></symbol>
     <symbol id="i-logout" viewBox="0 0 24 24"><path d="M10 4H4v16h6M14 8l4 4-4 4M8 12h10"/></symbol>
     <symbol id="i-palette" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><circle cx="9" cy="9" r="1"/><circle cx="15" cy="8" r="1"/><circle cx="16" cy="14" r="1"/><path d="M8 16h2a2 2 0 0 1 2 2v2"/></symbol>
     <symbol id="i-download" viewBox="0 0 24 24"><path d="M12 3v12m0 0 4-4m-4 4-4-4M4 21h16"/></symbol>
@@ -57,10 +63,10 @@
         <p class="eyebrow">欢迎回来</p>
         <h2>登录管理中心</h2>
         <p class="form-intro">使用管理员账户继续</p>
-        <label class="field"><span>用户名</span><input name="username" autocomplete="username" required></label>
+        <label class="field"><span>用户名</span><input name="username" autocomplete="username" autocapitalize="none" spellcheck="false" required></label>
         <label class="field"><span>密码</span><input name="password" type="password" autocomplete="current-password" required></label>
         <p id="login-error" class="form-error" role="alert"></p>
-        <button class="button primary wide" type="submit"><span>登录</span><svg><use href="#i-chevron"/></svg></button>
+        <button class="button primary wide" type="submit"><span>登录管理中心</span><svg><use href="#i-chevron"/></svg></button>
         <small class="login-footnote">凭据仅用于建立安全会话，不会保存在浏览器存储中。</small>
       </form>
     </div>
@@ -92,26 +98,26 @@
 
     <main class="main">
       <header class="topbar">
-        <button class="icon-button menu-button" data-action="open-menu" aria-label="打开菜单"><svg><use href="#i-menu"/></svg></button>
+        <button id="menu-button" class="icon-button menu-button" data-action="open-menu" aria-label="收起侧栏" aria-expanded="true"><svg><use id="menu-icon" href="#i-sidebar-collapse"/></svg></button>
         <div class="search"><svg><use href="#i-search"/></svg><input id="global-search" type="search" placeholder="搜索当前页面" aria-label="搜索当前页面"><kbd>⌘ K</kbd></div>
         <div class="topbar-actions">
           <span class="service-pill"><i></i><span>服务正常</span></span>
           <button class="icon-button" data-action="toggle-palette" aria-label="切换配色" title="切换配色"><svg><use href="#i-palette"/></svg></button>
           <button class="icon-button theme-button" data-action="toggle-theme" aria-label="切换主题" title="切换主题"><svg><use id="theme-icon" href="#i-moon"/></svg></button>
           <button class="icon-button" data-action="restart-service" aria-label="重启服务" title="重启服务"><svg><use href="#i-refresh"/></svg></button>
-          <button class="user-button" data-action="user-menu"><span id="user-avatar">A</span><span class="user-meta"><strong id="username">admin</strong><small>管理员</small></span><svg><use href="#i-chevron"/></svg></button>
-          <div id="user-menu" class="user-menu" hidden><button data-action="logout"><svg><use href="#i-logout"/></svg>退出登录</button></div>
+          <button class="user-button" data-action="user-menu" aria-haspopup="menu" aria-expanded="false"><span id="user-avatar">A</span><span class="user-meta"><strong id="username">admin</strong><small>管理员</small></span><svg><use href="#i-chevron"/></svg></button>
+          <div id="user-menu" class="user-menu" role="menu" hidden><button class="user-menu-item" data-action="admin-note" type="button" role="menuitem"><svg><use href="#i-note"/></svg><span>备注</span></button><button class="user-menu-item" data-action="logout" type="button" role="menuitem"><svg><use href="#i-logout"/></svg><span>退出登录</span></button></div>
         </div>
       </header>
 
-      <div class="content-wrap">
+      <div class="content-wrap" id="main-content">
         <div class="page-header"><div><p id="page-eyebrow" class="eyebrow"></p><h1 id="page-title"></h1><p id="page-description"></p></div><div id="page-actions" class="page-actions"></div></div>
         <section id="page-content" class="page-content" aria-live="polite"></section>
       </div>
     </main>
   </div>
 
-  <dialog id="modal" class="modal"><form id="modal-form" method="dialog"><header><div><p id="modal-eyebrow" class="eyebrow"></p><h2 id="modal-title"></h2></div><button type="button" class="icon-button" data-action="close-modal" aria-label="关闭"><svg><use href="#i-close"/></svg></button></header><div id="modal-body" class="modal-body"></div><footer id="modal-footer"><button type="button" class="button secondary" data-action="close-modal">取消</button><button id="modal-submit" type="submit" class="button primary">保存</button></footer></form></dialog>
-  <div id="toasts" class="toasts" aria-live="polite"></div>
+  <dialog id="modal" class="modal" aria-labelledby="modal-title"><form id="modal-form" method="dialog"><header><div><p id="modal-eyebrow" class="eyebrow"></p><h2 id="modal-title"></h2></div><button type="button" class="icon-button" data-action="close-modal" aria-label="关闭弹窗"><svg><use href="#i-close"/></svg></button></header><div id="modal-body" class="modal-body"></div><footer id="modal-footer"><button type="button" class="button secondary" data-action="close-modal">取消</button><button id="modal-submit" type="submit" class="button primary">保存</button></footer></form></dialog>
+  <div id="toasts" class="toasts" aria-live="polite" aria-atomic="true"></div>
 </body>
 </html>

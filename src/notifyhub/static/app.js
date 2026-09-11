@@ -10,7 +10,7 @@ const PAGES = {
   plugins: ['应用与插件', '插件管理', '管理插件商店、运行能力和第三方服务集成'],
   deliveries: ['运行状态', '投递历史', '追踪每一次发送、失败原因与重试状态'],
   logs: ['运行状态', '系统日志', '查看当前进程最近的运行日志'],
-  settings: ['系统管理', '系统设置', '管理站点信息、安全参数与运行环境'],
+  settings: ['系统管理', '系统设置', '管理站点信息、安全参数、运行环境与界面外观'],
 }
 
 const CHANNEL_TYPES = {
@@ -87,6 +87,11 @@ const state = {
   session: null,
   status: null,
   config: null,
+  appearance: {
+    appearance_background: '', appearance_backgrounds: [],
+    appearance_glass_opacity: 50, appearance_glass_brightness: 45,
+    appearance_glass_blur: 10, appearance_mask_opacity: 50,
+  },
   templates: [],
   eventTypes: [],
   plugins: [],
@@ -103,6 +108,7 @@ const state = {
   deliveryFilters: { route_id: '', channel_name: '', error: '', date_from: '', date_to: '' },
   lastPage: '',
   modalSubmit: null,
+  modalReturnFocus: null,
   logTimer: null,
   pluginLogTimer: null,
 }
@@ -168,9 +174,10 @@ function statusText(status) {
 }
 
 async function api(path, options = {}) {
+  const hasJsonBody = options.body && !(options.body instanceof FormData)
   const response = await fetch(path, {
     ...options,
-    headers: { ...(options.body ? { 'Content-Type': 'application/json' } : {}), ...(options.headers || {}) },
+    headers: { ...(hasJsonBody ? { 'Content-Type': 'application/json' } : {}), ...(options.headers || {}) },
   })
   const text = await response.text()
   let data = null
@@ -199,8 +206,11 @@ function setTheme(theme) {
   document.documentElement.dataset.theme = theme
   localStorage.setItem('notify-theme', theme)
   const icon = theme === 'dark' ? '#i-sun' : '#i-moon'
+  const label = theme === 'dark' ? '切换到浅色主题' : '切换到深色主题'
   $('#theme-icon')?.setAttribute('href', icon)
   $('#login-theme-icon')?.setAttribute('href', icon)
+  $$('.theme-button').forEach(button => { button.setAttribute('aria-label', label); button.title = label })
+  $('#theme-color')?.setAttribute('content', theme === 'dark' ? '#0b0d12' : '#f4f5f8')
 }
 
 const PALETTES = [
@@ -222,19 +232,50 @@ function setPalette(index) {
   document.documentElement.style.setProperty('--nav-active-text', item[1])
   document.documentElement.style.setProperty('--nav-badge-bg', `${item[1]}20`)
   document.documentElement.style.setProperty('--nav-badge-text', item[1])
-  document.querySelectorAll('.brand-mark').forEach(node => { node.style.background = `linear-gradient(145deg, ${item[1]}, ${item[2]})` })
+  document.querySelectorAll('.brand-mark, #user-avatar').forEach(node => { node.style.background = `linear-gradient(145deg, ${item[1]}, ${item[2]})` })
   localStorage.setItem('notify-palette', String(index))
+}
+
+function applyAppearance(appearance = state.appearance, cache = true) {
+  const root = document.documentElement
+  const number = (key, fallback) => Math.max(0, Math.min(100, Number(appearance?.[key] ?? fallback)))
+  const opacity = number('appearance_glass_opacity', 50)
+  const brightness = number('appearance_glass_brightness', 45)
+  const blur = number('appearance_glass_blur', 10)
+  const mask = number('appearance_mask_opacity', 50)
+  const background = /^\/api\/appearance\/background\/[0-9a-f]{64}\.(?:png|jpg|webp|gif|avif)$/.test(appearance?.appearance_background || '') ? appearance.appearance_background : ''
+  root.style.setProperty('--glass-opacity', `${100 - opacity}%`)
+  root.style.setProperty('--glass-brightness', (0.65 + brightness / 100 * .7).toFixed(2))
+  root.style.setProperty('--glass-dim', Math.max(0, (50 - brightness) / 50 * .28).toFixed(3))
+  root.style.setProperty('--glass-light', Math.max(0, (brightness - 50) / 50 * .2).toFixed(3))
+  root.style.setProperty('--glass-blur', `${blur}px`)
+  root.style.setProperty('--page-dim', Math.max(0, (50 - mask) / 50 * .72).toFixed(3))
+  root.style.setProperty('--page-light', Math.max(0, (mask - 50) / 50 * .28).toFixed(3))
+  root.style.setProperty('--instance-background', background ? `url("${background}")` : 'none')
+  root.dataset.hasBackground = background ? 'true' : 'false'
+  if (cache) {
+    localStorage.setItem('notify-appearance', JSON.stringify({
+      appearance_background: background,
+      appearance_glass_opacity: opacity,
+      appearance_glass_brightness: brightness,
+      appearance_glass_blur: blur,
+      appearance_mask_opacity: mask,
+    }))
+  }
 }
 
 function togglePaletteMenu(button) {
   const existing = $('#palette-menu')
-  if (existing) return existing.remove()
+  if (existing) { button.setAttribute('aria-expanded', 'false'); return existing.remove() }
   const selected = Number(localStorage.getItem('notify-palette') || 7)
   const menu = document.createElement('div')
   menu.id = 'palette-menu'
   menu.className = 'palette-menu'
-  menu.innerHTML = PALETTES.map((item, index) => `<button class="palette-item ${index === selected ? 'active' : ''}" data-palette="${index}"><i class="palette-dot" style="background:${item[1]}"></i>${item[0]}</button>`).join('')
+  menu.setAttribute('role', 'menu')
+  menu.setAttribute('aria-label', '界面配色')
+  menu.innerHTML = PALETTES.map((item, index) => `<button class="palette-item ${index === selected ? 'active' : ''}" data-palette="${index}" role="menuitemradio" aria-checked="${index === selected}"><i class="palette-dot" style="background:${item[1]}"></i>${item[0]}</button>`).join('')
   document.body.append(menu)
+  button.setAttribute('aria-expanded', 'true')
   const rect = button.getBoundingClientRect()
   menu.style.top = `${Math.min(rect.bottom + 8, window.innerHeight - menu.offsetHeight - 12)}px`
   menu.style.right = `${Math.max(12, window.innerWidth - rect.right)}px`
@@ -257,20 +298,20 @@ async function showApp(session) {
   state.session = session
   $('#login-view').hidden = true
   $('#app').hidden = false
-  document.body.classList.remove('auth-pending')
   $('#username').textContent = session.username || 'admin'
   $('#user-avatar').textContent = (session.username || 'A').slice(0, 1).toUpperCase()
   await loadCore()
   await renderPage()
+  document.body.classList.remove('auth-pending')
   if (session.password_change_required || state.status.password_change_required) {
     setTimeout(() => openPasswordForm(true), 120)
   }
 }
 
 async function loadCore() {
-  const [status, config, templatePayload, eventTypePayload, plugins, monitors, tasks] = await Promise.all([
+  const [status, config, templatePayload, eventTypePayload, plugins, monitors, tasks, appearance] = await Promise.all([
     api('/api/admin/status'), api('/api/admin/config'), api('/api/admin/templates'), api('/api/admin/event-types'), api('/api/admin/plugins'),
-    api('/api/admin/monitors'), api('/api/admin/tasks'),
+    api('/api/admin/monitors'), api('/api/admin/tasks'), api('/api/admin/appearance'),
   ])
   state.status = status
   state.config = config
@@ -279,6 +320,8 @@ async function loadCore() {
   state.plugins = plugins || []
   state.monitors = monitors || { items: [], events: [], summary: {} }
   state.tasks = tasks || { items: [], runs: [], summary: {} }
+  state.appearance = appearance || state.appearance
+  applyAppearance(state.appearance)
   $('#nav-channels').textContent = status.channels
   $('#nav-routes').textContent = status.routes
   $('#nav-plugins').textContent = status.plugins
@@ -306,6 +349,7 @@ function setPageActions(page) {
 async function renderPage() {
   const page = currentPage()
   if (state.lastPage && state.lastPage !== page) {
+    if (state.lastPage === 'settings') applyAppearance(state.appearance)
     state.query = ''
     $('#global-search').value = ''
   }
@@ -313,42 +357,56 @@ async function renderPage() {
   clearInterval(state.logTimer)
   state.logTimer = null
   const [eyebrow, title, description] = PAGES[page]
+  document.title = `${title} · Notify`
   $('#page-eyebrow').textContent = eyebrow
   $('#page-title').textContent = title
   $('#page-description').textContent = description
+  $('#global-search').placeholder = `搜索${title}`
+  $('#global-search').setAttribute('aria-label', `搜索${title}`)
   setPageActions(page)
-  $$('#nav a').forEach(link => link.classList.toggle('active', link.dataset.page === page))
+  $$('#nav a').forEach(link => {
+    const active = link.dataset.page === page
+    link.classList.toggle('active', active)
+    if (active) link.setAttribute('aria-current', 'page')
+    else link.removeAttribute('aria-current')
+  })
   closeMobileMenu()
+  $('#page-content').setAttribute('aria-busy', 'true')
+  $('#page-content').innerHTML = '<div class="skeleton page-skeleton"></div>'
 
-  if (page === 'deliveries') {
-    $('#page-content').innerHTML = '<div class="skeleton"></div>'
-    const filters = { ...state.deliveryFilters, status: state.deliveryStatus }
-    const suffix = Object.entries(filters).filter(([, value]) => value).map(([key, value]) => `&${key}=${encodeURIComponent(value)}`).join('')
-    state.deliveries = await api(`/api/admin/deliveries?limit=300${suffix}`)
+  try {
+    if (page === 'deliveries') {
+      $('#page-content').innerHTML = '<div class="skeleton"></div>'
+      const filters = { ...state.deliveryFilters, status: state.deliveryStatus }
+      const suffix = Object.entries(filters).filter(([, value]) => value).map(([key, value]) => `&${key}=${encodeURIComponent(value)}`).join('')
+      state.deliveries = await api(`/api/admin/deliveries?limit=300${suffix}`)
+    }
+    if (page === 'logs') {
+      state.logs = await api('/api/admin/logs?limit=300')
+      state.logTimer = setInterval(async () => {
+        if (currentPage() !== 'logs') return
+        try { state.logs = await api('/api/admin/logs?limit=300'); renderCurrent() } catch { /* next poll retries */ }
+      }, 5000)
+    }
+    if (page === 'plugins') {
+      state.pluginStoreLoading = true
+      state.pluginStoreError = ''
+      loadPluginStore()
+    }
+    if (page === 'monitors') {
+      $('#page-content').innerHTML = '<div class="skeleton"></div>'
+      state.monitors = await api('/api/admin/monitors')
+      $('#nav-monitors').textContent = state.monitors.summary?.total || 0
+    }
+    if (page === 'tasks') {
+      $('#page-content').innerHTML = '<div class="skeleton"></div>'
+      state.tasks = await api('/api/admin/tasks')
+      $('#nav-tasks').textContent = state.tasks.summary?.total || 0
+    }
+    renderCurrent()
+  } finally {
+    $('#page-content').removeAttribute('aria-busy')
   }
-  if (page === 'logs') {
-    state.logs = await api('/api/admin/logs?limit=300')
-    state.logTimer = setInterval(async () => {
-      if (currentPage() !== 'logs') return
-      try { state.logs = await api('/api/admin/logs?limit=300'); renderCurrent() } catch { /* next poll retries */ }
-    }, 5000)
-  }
-  if (page === 'plugins') {
-    state.pluginStoreLoading = true
-    state.pluginStoreError = ''
-    loadPluginStore()
-  }
-  if (page === 'monitors') {
-    $('#page-content').innerHTML = '<div class="skeleton"></div>'
-    state.monitors = await api('/api/admin/monitors')
-    $('#nav-monitors').textContent = state.monitors.summary?.total || 0
-  }
-  if (page === 'tasks') {
-    $('#page-content').innerHTML = '<div class="skeleton"></div>'
-    state.tasks = await api('/api/admin/tasks')
-    $('#nav-tasks').textContent = state.tasks.summary?.total || 0
-  }
-  renderCurrent()
 }
 
 function renderCurrent() {
@@ -375,14 +433,14 @@ function renderMonitors() {
     const healthy = ['up', 'healthy', 'ok'].includes(item.status)
     return `<article class="entity-card"><div class="entity-head"><span class="entity-icon">${icon('monitor')}</span><div class="entity-title"><h3>${escapeHtml(item.name)}</h3><p>${escapeHtml(item.provider)} · ${escapeHtml(item.category)}</p></div><span class="status-badge ${healthy ? 'active' : 'failed'}">${healthy ? '正常' : '需关注'}</span></div><div class="entity-body"><p>${escapeHtml(item.summary || '暂无状态说明')}</p></div><div class="entity-actions"><small>检查：${escapeHtml(formatDate(item.last_checked_at))}</small><span class="spacer"></span><span class="tag">${escapeHtml(item.status)}</span></div></article>`
   }).join('')}</div>` : emptyState('monitor', '还没有监控数据', 'NDU、Watchtower、哪吒或 PVE 产生状态后会显示在这里')
-  const history = events.length ? `<div class="table-wrap"><table class="data-table"><thead><tr><th>事件</th><th>来源</th><th>状态</th><th>时间</th></tr></thead><tbody>${events.slice(0,50).map(item => `<tr><td><div class="cell-title"><strong>${escapeHtml(item.title)}</strong><small>${escapeHtml(item.summary)}</small></div></td><td>${escapeHtml(item.source)}</td><td><span class="status-badge ${item.status === 'resolved' ? 'active' : 'pending'}">${item.status === 'resolved' ? '已恢复' : '事件'}</span></td><td>${escapeHtml(formatDate(item.created_at))}</td></tr>`).join('')}</tbody></table></div>` : ''
+  const history = events.length ? `<div class="table-wrap"><table class="data-table"><thead><tr><th>事件</th><th>来源</th><th>状态</th><th>时间</th></tr></thead><tbody>${events.slice(0,50).map(item => `<tr><td data-label="事件"><div class="cell-title"><strong>${escapeHtml(item.title)}</strong><small>${escapeHtml(item.summary)}</small></div></td><td data-label="来源">${escapeHtml(item.source)}</td><td data-label="状态"><span class="status-badge ${item.status === 'resolved' ? 'active' : 'pending'}">${item.status === 'resolved' ? '已恢复' : '事件'}</span></td><td data-label="时间">${escapeHtml(formatDate(item.created_at))}</td></tr>`).join('')}</tbody></table></div>` : ''
   return `<div class="stats-grid">${statCard('监控项', summary.total || 0, '统一状态入口', 'monitor', 'purple')}${statCard('运行正常', summary.healthy || 0, '最近检查健康', 'check', 'green')}${statCard('需要关注', summary.attention || 0, '异常或警告', 'alert', 'orange')}</div>${cards}<section class="panel" style="margin-top:18px"><header class="panel-header"><div><h2>状态事件</h2><p>异常与恢复历史</p></div></header><div class="panel-body">${history || '暂无状态变化'}</div></section>`
 }
 
 function renderTasks() {
   const summary = state.tasks.summary || {}
   const items = (state.tasks.items || []).filter(item => matches(item.name, item.plugin_id, item.schedule, item.last_status))
-  const rows = items.length ? `<div class="table-wrap"><table class="data-table"><thead><tr><th>任务</th><th>来源</th><th>计划</th><th>最近状态</th><th>最近完成</th></tr></thead><tbody>${items.map(item => `<tr><td><strong>${escapeHtml(item.name)}</strong></td><td><span class="tag purple">${escapeHtml(item.plugin_id)}</span></td><td><code class="code">${escapeHtml(item.schedule)}</code></td><td><span class="status-badge ${item.last_status === 'success' ? 'active' : item.last_status === 'failed' ? 'failed' : 'pending'}">${escapeHtml(item.last_status)}</span></td><td>${escapeHtml(formatDate(item.last_finished_at))}</td></tr>`).join('')}</tbody></table></div>` : emptyState('task', '还没有已注册任务', 'Reminder、NSRSS 等插件注册定时任务后会显示在这里')
+  const rows = items.length ? `<div class="table-wrap"><table class="data-table"><thead><tr><th>任务</th><th>来源</th><th>计划</th><th>最近状态</th><th>最近完成</th></tr></thead><tbody>${items.map(item => `<tr><td data-label="任务"><strong>${escapeHtml(item.name)}</strong></td><td data-label="来源"><span class="tag purple">${escapeHtml(item.plugin_id)}</span></td><td data-label="计划"><code class="code">${escapeHtml(item.schedule)}</code></td><td data-label="最近状态"><span class="status-badge ${item.last_status === 'success' ? 'active' : item.last_status === 'failed' ? 'failed' : 'pending'}">${escapeHtml(item.last_status)}</span></td><td data-label="最近完成">${escapeHtml(formatDate(item.last_finished_at))}</td></tr>`).join('')}</tbody></table></div>` : emptyState('task', '还没有已注册任务', 'Reminder、NSRSS 等插件注册定时任务后会显示在这里')
   return `<div class="stats-grid">${statCard('全部任务', summary.total || 0, '插件与系统任务', 'task', 'purple')}${statCard('已启用', summary.enabled || 0, '由调度器管理', 'check', 'green')}${statCard('执行失败', summary.failed || 0, `运行中 ${summary.running || 0}`, 'alert', 'orange')}</div>${rows}`
 }
 
@@ -530,7 +588,21 @@ function renderLogs() {
 
 function renderSettings() {
   const app = state.config.app || {}
-  return `<div class="settings-grid"><section class="panel"><header class="panel-header"><div><h2>站点设置</h2><p>管理后台的基础信息</p></div><button class="button secondary small" data-action="edit-settings">${icon('edit')}编辑</button></header><div class="panel-body settings-list"><div class="info-row"><span>应用名称</span><strong>${escapeHtml(app.app_name || 'Notify')}</strong></div><div class="info-row"><span>站点地址</span><strong>${escapeHtml(app.site_url || location.origin)}</strong></div><div class="info-row"><span>记录保留</span><strong>${escapeHtml(app.record_retention_days || 90)} 天</strong></div><div class="info-row"><span>GitHub Token</span><code class="code">${escapeHtml(app.github_token || '未配置')}</code></div></div></section><section class="panel"><header class="panel-header"><div><h2>管理员安全</h2><p>修改管理后台登录密码</p></div><button class="button secondary small" data-action="change-password">${icon('settings')}修改密码</button></header><div class="panel-body settings-list"><div class="info-row"><span>当前账户</span><strong>${escapeHtml(state.session?.username || 'admin')}</strong></div><div class="info-row"><span>密码状态</span><span class="status-badge ${state.status.password_change_required ? 'pending' : 'active'}">${state.status.password_change_required ? '需要修改' : '已设置'}</span></div><p class="form-note">密码会保存到数据目录，修改后立即生效，并使其他登录会话失效。</p></div></section><section class="panel"><header class="panel-header"><div><h2>运行信息</h2><p>当前实例状态</p></div><span class="status-badge active">正常</span></header><div class="panel-body settings-list"><div class="info-row"><span>系统版本</span><code class="code">v${escapeHtml(state.status.version)}</code></div><div class="info-row"><span>通知渠道</span><strong>${state.status.channels}</strong></div><div class="info-row"><span>通知通道</span><strong>${state.status.routes}</strong></div><div class="info-row"><span>插件任务</span><span class="status-badge ${state.status.plugin_tasks ? 'active' : 'inactive'}">${state.status.plugin_tasks ? '运行中' : '已暂停'}</span></div><div class="info-row"><span>API 文档</span><a class="code" href="/docs" target="_blank" rel="noopener">/docs</a></div></div></section></div>`
+  const appearance = state.appearance || {}
+  const backgrounds = appearance.appearance_backgrounds || []
+  const gallery = backgrounds.length ? backgrounds.map((background, index) => {
+    const filename = background.split('/').pop()
+    const active = background === appearance.appearance_background
+    return `<div class="appearance-thumb ${active ? 'active' : ''}" data-action="select-background" data-background="${escapeHtml(background)}" role="button" tabindex="0" aria-label="使用背景图 ${index + 1}" aria-pressed="${active}" style="background-image:url('${escapeHtml(background)}')"><button class="appearance-delete" data-action="delete-background" data-filename="${escapeHtml(filename)}" type="button" title="删除背景图" aria-label="删除背景图 ${index + 1}">${icon('trash')}</button></div>`
+  }).join('') : '<div class="appearance-empty">尚未上传背景图</div>'
+  const slider = (key, label, value) => `<label class="appearance-slider"><span>${label}</span><output id="${key}-value">${escapeHtml(value)}%</output><input id="${key}" data-appearance-setting type="range" min="0" max="100" value="${escapeHtml(value)}"></label>`
+  return `<div class="settings-grid">
+    <section class="panel"><header class="panel-header"><div><h2>站点设置</h2><p>管理后台的基础信息</p></div><button class="button secondary small" data-action="edit-settings">${icon('edit')}编辑</button></header><div class="panel-body settings-list"><div class="info-row"><span>应用名称</span><strong>${escapeHtml(app.app_name || 'Notify')}</strong></div><div class="info-row"><span>站点地址</span><strong>${escapeHtml(app.site_url || location.origin)}</strong></div><div class="info-row"><span>记录保留</span><strong>${escapeHtml(app.record_retention_days || 90)} 天</strong></div><div class="info-row"><span>GitHub Token</span><code class="code">${escapeHtml(app.github_token || '未配置')}</code></div></div></section>
+    <section class="panel"><header class="panel-header"><div><h2>管理员安全</h2><p>修改管理后台登录密码</p></div><button class="button secondary small" data-action="change-password">${icon('settings')}修改密码</button></header><div class="panel-body settings-list"><div class="info-row"><span>当前账户</span><strong>${escapeHtml(state.session?.username || 'admin')}</strong></div><div class="info-row"><span>密码状态</span><span class="status-badge ${state.status.password_change_required ? 'pending' : 'active'}">${state.status.password_change_required ? '需要修改' : '已设置'}</span></div><p class="form-note">密码会保存到数据目录，修改后立即生效，并使其他登录会话失效。</p></div></section>
+    <section class="panel settings-wide appearance-settings"><header class="panel-header"><div><h2>外观</h2><p>首页背景与界面质感</p></div></header><div class="panel-body"><h3>背景图</h3><p class="form-note">建议使用 16:9 的高分辨率横图。图片保存在服务端图库中，最多保留 20 张；点选即可切换，同一实例的其他设备也会使用该设置。</p><div class="appearance-gallery">${gallery}</div><div class="appearance-actions"><button class="button secondary" data-action="upload-background" type="button">${icon('upload')}上传背景图</button><button class="button danger" data-action="clear-background" type="button">使用默认背景</button></div></div></section>
+    <section class="panel settings-wide appearance-texture"><header class="panel-header"><div><h2>界面质感</h2><p>调整液态玻璃卡片的透明度、明暗与模糊效果</p></div></header><div class="panel-body">${slider('glass-opacity', '玻璃透明度', appearance.appearance_glass_opacity ?? 50)}${slider('glass-brightness', '玻璃明暗', appearance.appearance_glass_brightness ?? 45)}${slider('glass-blur', '玻璃折射与模糊', appearance.appearance_glass_blur ?? 10)}${slider('mask-opacity', '页面明暗', appearance.appearance_mask_opacity ?? 50)}<div class="appearance-footer"><span class="form-note">保存后跨设备生效</span><button class="button danger" data-action="reset-appearance" type="button">恢复默认</button><button class="button primary" data-action="save-appearance" type="button">保存</button></div></div></section>
+    <section class="panel settings-wide"><header class="panel-header"><div><h2>运行信息</h2><p>当前实例状态</p></div><span class="status-badge active">正常</span></header><div class="panel-body settings-list"><div class="info-row"><span>系统版本</span><code class="code">v${escapeHtml(state.status.version)}</code></div><div class="info-row"><span>通知渠道</span><strong>${state.status.channels}</strong></div><div class="info-row"><span>通知通道</span><strong>${state.status.routes}</strong></div><div class="info-row"><span>插件任务</span><span class="status-badge ${state.status.plugin_tasks ? 'active' : 'inactive'}">${state.status.plugin_tasks ? '运行中' : '已暂停'}</span></div><div class="info-row"><span>API 文档</span><a class="code" href="/docs" target="_blank" rel="noopener">/docs</a></div></div></section>
+  </div>`
 }
 
 function emptyState(iconName, title, description) {
@@ -558,6 +630,7 @@ function formField(name, label, type = 'text', value = '', placeholder = '', hin
 
 function openModal({ eyebrow = '通知管理', title, body, submitText = '保存', wide = false, noSubmit = false, onSubmit = null }) {
   const modal = $('#modal')
+  if (!modal.open) state.modalReturnFocus = document.activeElement
   modal.classList.toggle('wide', wide)
   $('#modal-eyebrow').textContent = eyebrow
   $('#modal-title').textContent = title
@@ -568,6 +641,7 @@ function openModal({ eyebrow = '通知管理', title, body, submitText = '保存
   $('#modal-submit').hidden = noSubmit
   state.modalSubmit = onSubmit
   if (!modal.open) modal.showModal()
+  requestAnimationFrame(() => $('#modal-body input:not([type="hidden"]), #modal-body select, #modal-body textarea, #modal-submit')?.focus())
 }
 
 function closeModal() {
@@ -590,6 +664,39 @@ function confirmModal(title, message, action, danger = false) {
   })
   $('#modal-submit').classList.toggle('danger', danger)
   $('#modal-submit').classList.toggle('primary', !danger)
+}
+
+async function openAdminNote() {
+  $('#user-menu').hidden = true
+  $('[data-action="user-menu"]')?.setAttribute('aria-expanded', 'false')
+  openModal({
+    eyebrow: '管理员工具',
+    title: '备注',
+    body: `<p class="form-note">用于临时记录实例相关事项，保存后同一实例的其他设备也可查看。</p><label class="field admin-note-field"><span>记事内容</span><textarea name="note" rows="12" maxlength="10000" placeholder="正在读取备注…" disabled></textarea><small id="admin-note-count">0 / 10000</small></label>`,
+    submitText: '保存备注',
+    onSubmit: async form => {
+      const note = String(new FormData(form).get('note') || '')
+      const result = await api('/api/admin/note', { method: 'PUT', body: JSON.stringify({ note }) })
+      closeModal()
+      toast(result.message || '备注已保存')
+    },
+  })
+  const textarea = $('#modal-body textarea[name="note"]')
+  const count = $('#admin-note-count')
+  const syncCount = () => { if (count) count.textContent = `${textarea.value.length} / 10000` }
+  textarea.addEventListener('input', syncCount)
+  try {
+    const data = await api('/api/admin/note')
+    if (!textarea.isConnected) return
+    textarea.value = data.note || ''
+    textarea.disabled = false
+    textarea.placeholder = '例如：待测试的模板、临时维护安排或上游说明'
+    syncCount()
+    textarea.focus()
+  } catch (error) {
+    closeModal()
+    toast('备注读取失败', error.message, 'error')
+  }
 }
 
 async function saveConfig(nextConfig, message = '配置已保存') {
@@ -971,6 +1078,44 @@ function openSettingsForm() {
   })
 }
 
+function appearanceFromControls() {
+  const value = (id, fallback) => Math.max(0, Math.min(100, Number($(`#${id}`)?.value ?? fallback)))
+  return {
+    ...state.appearance,
+    appearance_glass_opacity: value('glass-opacity', 50),
+    appearance_glass_brightness: value('glass-brightness', 45),
+    appearance_glass_blur: value('glass-blur', 10),
+    appearance_mask_opacity: value('mask-opacity', 50),
+  }
+}
+
+async function saveAppearance(payload, message) {
+  state.appearance = await api('/api/admin/appearance', { method: 'PUT', body: JSON.stringify(payload) })
+  applyAppearance(state.appearance)
+  if (currentPage() === 'settings') renderCurrent()
+  toast(message)
+}
+
+function uploadAppearanceBackground() {
+  const input = Object.assign(document.createElement('input'), { type: 'file', accept: 'image/png,image/jpeg,image/webp,image/gif,image/avif' })
+  input.onchange = async () => {
+    const file = input.files?.[0]
+    if (!file) return
+    if (file.size > 5 * 1024 * 1024) return toast('上传失败', '背景图不能超过 5 MB', 'error')
+    const body = new FormData()
+    body.append('background', file)
+    try {
+      state.appearance = await api('/api/admin/appearance/backgrounds', { method: 'POST', body })
+      applyAppearance(state.appearance)
+      renderCurrent()
+      toast('背景图已保存')
+    } catch (error) {
+      toast('上传失败', error.message, 'error')
+    }
+  }
+  input.click()
+}
+
 function openTestChannel(channel) {
   openModal({
     eyebrow: '连接测试', title: `测试 · ${channel.name}`,
@@ -1035,15 +1180,42 @@ async function finishPluginChange(message, result = {}) {
 function openMobileMenu() {
   $('#sidebar').classList.add('open')
   $('#mobile-backdrop').classList.add('open')
+  syncMenuButton()
 }
 
 function closeMobileMenu() {
   $('#sidebar').classList.remove('open')
   $('#mobile-backdrop').classList.remove('open')
+  syncMenuButton()
+}
+
+function isMobileLayout() {
+  return matchMedia('(max-width: 820px)').matches
+}
+
+function syncMenuButton() {
+  const button = $('#menu-button')
+  const menuIcon = $('#menu-icon')
+  if (!button || !menuIcon) return
+  const mobile = isMobileLayout()
+  const collapsed = document.documentElement.classList.contains('sidebar-collapsed')
+  const open = $('#sidebar')?.classList.contains('open') || false
+  const label = mobile ? (open ? '关闭菜单' : '打开菜单') : (collapsed ? '展开侧栏' : '收起侧栏')
+  menuIcon.setAttribute('href', mobile ? '#i-menu' : (collapsed ? '#i-sidebar-expand' : '#i-sidebar-collapse'))
+  button.setAttribute('aria-label', label)
+  button.setAttribute('title', label)
+  button.setAttribute('aria-expanded', String(mobile ? open : !collapsed))
+}
+
+function toggleNavigation() {
+  if (isMobileLayout()) return $('#sidebar')?.classList.contains('open') ? closeMobileMenu() : openMobileMenu()
+  document.documentElement.classList.toggle('sidebar-collapsed')
+  localStorage.setItem('notify-sidebar', document.documentElement.classList.contains('sidebar-collapsed') ? 'collapsed' : 'expanded')
+  syncMenuButton()
 }
 
 async function handleAction(action, target) {
-  if (action === 'open-menu') return openMobileMenu()
+  if (action === 'open-menu') return toggleNavigation()
   if (action === 'close-menu') return closeMobileMenu()
   if (action === 'close-modal') return closeModal()
   if (action === 'toggle-theme') return setTheme(document.documentElement.dataset.theme === 'dark' ? 'light' : 'dark')
@@ -1058,10 +1230,17 @@ async function handleAction(action, target) {
     }
     location.reload()
   })
-  if (action === 'user-menu') { $('#user-menu').hidden = !$('#user-menu').hidden; return }
+  if (action === 'user-menu') {
+    const menu = $('#user-menu')
+    menu.hidden = !menu.hidden
+    target.setAttribute('aria-expanded', String(!menu.hidden))
+    return
+  }
+  if (action === 'admin-note') return openAdminNote()
   if (action === 'logout') {
     await api('/api/admin/logout', { method: 'POST' })
     $('#user-menu').hidden = true
+    $('[data-action="user-menu"]')?.setAttribute('aria-expanded', 'false')
     return showLogin()
   }
   if (action === 'refresh') {
@@ -1128,6 +1307,30 @@ async function handleAction(action, target) {
   }
   if (action === 'delivery-detail') return openDeliveryDetail(state.deliveries.find(item => String(item.id) === String(target.dataset.id)))
   if (action === 'edit-settings') return openSettingsForm()
+  if (action === 'upload-background') return uploadAppearanceBackground()
+  if (action === 'select-background') return saveAppearance({ appearance_background: target.dataset.background || '' }, '背景图已切换')
+  if (action === 'clear-background') return saveAppearance({ appearance_background: '' }, '已使用默认背景')
+  if (action === 'save-appearance') return saveAppearance(appearanceFromControls(), '界面质感已保存')
+  if (action === 'reset-appearance') {
+    const defaults = { 'glass-opacity': 50, 'glass-brightness': 45, 'glass-blur': 10, 'mask-opacity': 50 }
+    Object.entries(defaults).forEach(([id, value]) => {
+      const control = $(`#${id}`)
+      const output = $(`#${id}-value`)
+      if (control) control.value = value
+      if (output) output.textContent = `${value}%`
+    })
+    applyAppearance(appearanceFromControls(), false)
+    return
+  }
+  if (action === 'delete-background') {
+    return confirmModal('删除背景图', '确定删除这张背景图吗？删除后无法恢复。', async () => {
+      state.appearance = await api(`/api/admin/appearance/backgrounds/${encodeURIComponent(target.dataset.filename)}`, { method: 'DELETE' })
+      applyAppearance(state.appearance)
+      closeModal()
+      renderCurrent()
+      toast('背景图已删除')
+    }, true)
+  }
   if (action === 'export-config') { const data = await api('/api/admin/export'); const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' }); const link = document.createElement('a'); link.href = URL.createObjectURL(blob); link.download = 'notify-router-config.json'; link.click(); URL.revokeObjectURL(link.href); return toast('配置已导出') }
   if (action === 'import-config') { const input = Object.assign(document.createElement('input'), { type: 'file', accept: '.json,application/json' }); input.onchange = async () => { try { const data = JSON.parse(await input.files[0].text()); await api('/api/admin/import', { method: 'PUT', body: JSON.stringify(data) }); toast('配置已导入，请刷新页面') } catch (error) { toast('配置导入失败', error.message, 'error') } }; input.click(); return }
 }
@@ -1166,25 +1369,57 @@ $('#modal-form').addEventListener('submit', async event => {
 })
 
 document.addEventListener('click', async event => {
+  const pageLink = event.target.closest('#nav a[data-page]')
+  if (pageLink && pageLink.dataset.page !== currentPage()) {
+    $('#page-content').setAttribute('aria-busy', 'true')
+    $('#page-content').innerHTML = '<div class="skeleton page-skeleton"></div>'
+  }
   const palette = event.target.closest('[data-palette]')
   if (palette) {
     setPalette(Number(palette.dataset.palette))
     $('#palette-menu')?.remove()
+    $$('[data-action="toggle-palette"]').forEach(button => button.setAttribute('aria-expanded', 'false'))
     return
   }
   const target = event.target.closest('[data-action]')
   if (!target) {
-    if (!event.target.closest('#palette-menu')) $('#palette-menu')?.remove()
+    if (!event.target.closest('#palette-menu')) {
+      $('#palette-menu')?.remove()
+      $$('[data-action="toggle-palette"]').forEach(button => button.setAttribute('aria-expanded', 'false'))
+    }
+    if (!event.target.closest('#user-menu')) {
+      $('#user-menu').hidden = true
+      $('[data-action="user-menu"]')?.setAttribute('aria-expanded', 'false')
+    }
     return
+  }
+  if (!target.closest('#user-menu') && target.dataset.action !== 'user-menu') {
+    $('#user-menu').hidden = true
+    $('[data-action="user-menu"]')?.setAttribute('aria-expanded', 'false')
   }
   try { await handleAction(target.dataset.action, target) } catch (reason) { toast('操作失败', reason.message, 'error') }
 })
 
 $('#mobile-backdrop').addEventListener('click', closeMobileMenu)
+window.addEventListener('resize', syncMenuButton)
+
+$('#modal').addEventListener('close', () => {
+  state.modalSubmit = null
+  const returnFocus = state.modalReturnFocus
+  state.modalReturnFocus = null
+  if (returnFocus?.isConnected) returnFocus.focus()
+})
 
 $('#global-search').addEventListener('input', event => {
   state.query = event.target.value
   renderCurrent()
+})
+
+document.addEventListener('input', event => {
+  if (!event.target.matches('[data-appearance-setting]')) return
+  const output = $(`#${event.target.id}-value`)
+  if (output) output.textContent = `${event.target.value}%`
+  applyAppearance(appearanceFromControls(), false)
 })
 
 document.addEventListener('change', event => {
@@ -1196,22 +1431,43 @@ document.addEventListener('change', event => {
 })
 
 document.addEventListener('keydown', event => {
+  if ((event.key === 'Enter' || event.key === ' ') && event.target.matches('.appearance-thumb[data-action="select-background"]')) {
+    event.preventDefault()
+    event.target.click()
+    return
+  }
   if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 'k') {
     event.preventDefault()
     $('#global-search')?.focus()
   }
-  if (event.key === 'Escape') closeMobileMenu()
+  if (event.key === 'Escape') {
+    closeMobileMenu()
+    $('#palette-menu')?.remove()
+    $$('[data-action="toggle-palette"]').forEach(button => button.setAttribute('aria-expanded', 'false'))
+    $('#user-menu').hidden = true
+    $('[data-action="user-menu"]')?.setAttribute('aria-expanded', 'false')
+  }
 })
 
 window.addEventListener('hashchange', () => renderPage().catch(reason => toast('加载失败', reason.message, 'error')))
 
 async function boot() {
+  $('.search kbd').textContent = /Mac|iPhone|iPad/.test(navigator.platform) ? '⌘ K' : 'Ctrl K'
+  $$('#nav a[data-page]').forEach(link => { link.title = link.querySelector('span')?.textContent.trim() || '' })
+  $('.sidebar-status')?.setAttribute('title', '服务运行正常')
+  syncMenuButton()
+  $$('[data-action="toggle-palette"]').forEach(button => button.setAttribute('aria-expanded', 'false'))
   const preferred = localStorage.getItem('notify-theme') || (matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light')
   setTheme(preferred)
   setPalette(Number(localStorage.getItem('notify-palette') || 7))
+  const [appearanceResult, sessionResult] = await Promise.allSettled([api('/api/appearance'), api('/api/admin/session')])
+  if (appearanceResult.status === 'fulfilled') {
+    state.appearance = appearanceResult.value || state.appearance
+    applyAppearance(state.appearance)
+  }
   try {
-    const session = await api('/api/admin/session')
-    if (session.authenticated) await showApp(session)
+    if (sessionResult.status !== 'fulfilled') throw sessionResult.reason
+    if (sessionResult.value.authenticated) await showApp(sessionResult.value)
     else showLogin()
   } catch {
     showLogin()
