@@ -17,7 +17,7 @@ from urllib.parse import quote
 import uvicorn
 import httpx
 from .channels import send
-from fastapi import Body, Cookie, Depends, FastAPI, Header, HTTPException, Request, Response
+from fastapi import Body, Cookie, Depends, FastAPI, File, Header, HTTPException, Request, Response, UploadFile
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.security import HTTPBasic, HTTPBasicCredentials
 from fastapi.staticfiles import StaticFiles
@@ -392,6 +392,19 @@ def healthz():
     return {"status": "ok", "version": __version__}
 
 
+@app.get("/api/appearance", include_in_schema=False)
+def public_appearance():
+    return store.appearance
+
+
+@app.get("/api/appearance/background/{filename}", include_in_schema=False)
+def appearance_background(filename: str):
+    path = store.appearance_background_path(filename)
+    if not path:
+        raise HTTPException(404, "背景图不存在")
+    return FileResponse(path, headers={"Cache-Control": "public, max-age=31536000, immutable"})
+
+
 @app.post("/api/admin/login")
 def admin_login(payload: LoginRequest, response: Response, request: Request):
     client = request.client.host if request.client else "unknown"
@@ -420,6 +433,44 @@ def admin_login(payload: LoginRequest, response: Response, request: Request):
 def admin_logout(response: Response):
     response.delete_cookie(SESSION_COOKIE)
     return {"authenticated": False}
+
+
+@app.get("/api/admin/appearance", dependencies=[Depends(admin_auth)])
+def admin_appearance():
+    return store.appearance
+
+
+@app.put("/api/admin/appearance", dependencies=[Depends(admin_auth)])
+def save_admin_appearance(payload: dict = Body(...)):
+    try:
+        return store.save_appearance(payload)
+    except ValueError as exc:
+        raise HTTPException(400, str(exc)) from exc
+
+
+@app.post("/api/admin/appearance/backgrounds", dependencies=[Depends(admin_auth)])
+async def upload_admin_background(background: UploadFile = File(...)):
+    content = await background.read(5 * 1024 * 1024 + 1)
+    try:
+        return store.save_appearance_background(content)
+    except ValueError as exc:
+        messages = {
+            "background image must be no larger than 5 MB": "背景图不能超过 5 MB",
+            "background must be a PNG, JPEG, WebP, GIF or AVIF image": "背景图必须是 PNG、JPEG、WebP、GIF 或 AVIF 格式",
+        }
+        raise HTTPException(400, messages.get(str(exc), str(exc))) from exc
+    finally:
+        await background.close()
+
+
+@app.delete("/api/admin/appearance/backgrounds/{filename}", dependencies=[Depends(admin_auth)])
+def delete_admin_background(filename: str):
+    try:
+        return store.delete_appearance_background(filename)
+    except FileNotFoundError as exc:
+        raise HTTPException(404, "背景图不存在") from exc
+    except ValueError as exc:
+        raise HTTPException(400, "背景图名称无效") from exc
 
 
 @app.get("/api/admin/session")
@@ -899,7 +950,7 @@ app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
 
 @app.get("/")
 def index():
-    return FileResponse(STATIC_DIR / "index.html")
+    return FileResponse(STATIC_DIR / "index.html", headers={"Cache-Control": "no-store"})
 
 
 def _all_plugin_manifests():
