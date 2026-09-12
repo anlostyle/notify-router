@@ -16,6 +16,7 @@ plugin files are retained under `data/plugin-backups` for rollback.
 
 | Plugin | Purpose | Required configuration |
 | --- | --- | --- |
+| `baiyun_traffic` | Monitor subscription traffic and send a daily report | Subscription URL, notification route |
 | `TGForwardBot` | Telegram private-message relay | Bot Token, administrator Chat ID |
 | `nextfind_assistant` | Search, subscribe, and save NextFind resources through Enterprise WeChat | NextFind OpenAPI, Enterprise WeChat application |
 | `ndu_monitor` | Forward Docker image and GitHub release updates through Notify Router | Images, GitHub repositories, notification route |

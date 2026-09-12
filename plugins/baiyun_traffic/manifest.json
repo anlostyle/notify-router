@@ -1,0 +1,75 @@
+{
+  "id": "baiyun_traffic",
+  "name": "白菜云流量监控",
+  "description": "采集白菜云订阅用量，在监控中心展示状态并发送每日流量报告。",
+  "author": "Codex",
+  "logo": "https://img.andp.cc/icons/upload/%E7%99%BD%E8%8F%9C%E4%BA%91%E6%B5%81%E9%87%8F%E9%80%9A%E7%9F%A5%E5%9B%BE.png",
+  "thumbnailurl": "https://img.andp.cc/icons/upload/%E7%99%BD%E8%8F%9C%E4%BA%91%E6%B5%81%E9%87%8F%E9%80%9A%E7%9F%A5%E5%9B%BE.png",
+  "version": "0.1.0",
+  "schema_version": 2,
+  "capabilities": ["monitor.provider", "task.handler", "notify.action", "notify.test"],
+  "preserve": ["state.json"],
+  "documentation": {
+    "summary": "直接读取订阅响应中的 Subscription-Userinfo，不下载或解析订阅节点。",
+    "setup": [
+      "填写白菜云的完整订阅地址。该地址按密码字段保存和显示，请勿分享。",
+      "选择每日流量报告使用的 Notify 通知通道。",
+      "保持插件启用；系统会每 30 分钟采集一次，并在每天 09:00 发送报告。"
+    ],
+    "notes": [
+      "统计时区固定为 Asia/Shanghai。首次报告用于建立基线，下一个完整周期开始显示本期增量。",
+      "通知图片和点击链接均使用外部 URL，插件包内不包含图片文件。"
+    ]
+  },
+  "path": "/baiyun_traffic",
+  "configField": [
+    {
+      "fieldName": "enabled",
+      "fieldType": "enum",
+      "label": "运行状态",
+      "defaultValue": "1",
+      "options": [
+        {"value": "1", "label": "启用"},
+        {"value": "0", "label": "停用"}
+      ]
+    },
+    {
+      "fieldName": "subscription_token_url",
+      "fieldType": "string",
+      "label": "白菜云订阅地址",
+      "helpText": "填写完整订阅 URL；界面会按密码字段隐藏。",
+      "defaultValue": ""
+    },
+    {
+      "fieldName": "route_id",
+      "fieldType": "enum",
+      "label": "通知通道",
+      "helpText": "用于每日流量报告和异常通知。",
+      "enumValuesRef": "RouterList",
+      "defaultValue": ""
+    },
+    {
+      "fieldName": "reset_day",
+      "fieldType": "number",
+      "label": "每月重置日",
+      "helpText": "仅用于报告展示，范围 1 到 31。",
+      "defaultValue": 12
+    },
+    {
+      "fieldName": "image_url",
+      "fieldType": "string",
+      "label": "通知图片 URL",
+      "helpText": "外部图床地址；留空时发送无图通知。",
+      "defaultValue": "https://img.andp.cc/icons/upload/%E7%99%BD%E8%8F%9C%E4%BA%91%E6%B5%81%E9%87%8F%E9%80%9A%E7%9F%A5%E5%9B%BE.png"
+    },
+    {
+      "fieldName": "link_url",
+      "fieldType": "string",
+      "label": "通知点击链接",
+      "helpText": "留空时使用通知图片 URL。",
+      "defaultValue": ""
+    }
+  ],
+  "helpTextField": [],
+  "frontend_page": {}
+}

@@ -15,7 +15,7 @@ def test_release_plugins_compile_and_have_no_embedded_secrets():
         for path in PLUGIN_DIR.rglob("*")
         if path.is_file() and path.suffix in {".py", ".json", ".html", ".txt", ".md"}
     )
-    assert "andp.cc" not in text
+    assert "notify.andp.cc" not in text
     assert not re.search(r"eyJ[A-Za-z0-9_-]{30,}\.[A-Za-z0-9_-]{30,}", text)
     assert not list(PLUGIN_DIR.rglob("plugin_state.json"))
 

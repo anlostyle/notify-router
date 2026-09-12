@@ -4,6 +4,15 @@
   "homepage": "https://github.com/anlostyle/notify-router/tree/master/plugins",
   "plugins": [
     {
+      "id": "baiyun_traffic",
+      "name": "白菜云流量监控",
+      "version": "0.1.0",
+      "description": "采集白菜云订阅用量，在监控中心展示状态并发送每日流量报告。",
+      "author": "Codex",
+      "archive_url": "https://github.com/anlostyle/notify-router/archive/refs/heads/master.zip",
+      "subdir": "notify-router-master/plugins/baiyun_traffic"
+    },
+    {
       "id": "TGForwardBot",
       "name": "TG私聊机器人",
       "version": "0.0.1",
