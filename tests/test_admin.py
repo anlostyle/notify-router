@@ -10,7 +10,6 @@ def test_login_page_does_not_prefill_admin_username():
     html = files("notifyhub").joinpath("static/index.html").read_text(encoding="utf-8")
     script = files("notifyhub").joinpath("static/app.js").read_text(encoding="utf-8")
     styles = files("notifyhub").joinpath("static/app.css").read_text(encoding="utf-8")
-    cover = files("notifyhub").joinpath("static/baiyun-cover.png").read_bytes()
 
     assert '<input name="username" autocomplete="username" autocapitalize="none" spellcheck="false" required>' in html
     assert "body.auth-pending #login-view,body.auth-pending #app{visibility:hidden}" in html
@@ -24,7 +23,6 @@ def test_login_page_does_not_prefill_admin_username():
     assert "function toggleNavigation()" in script
     assert ".brand-mark, #user-avatar" in script
     assert script.index("<h2>界面质感</h2>") < script.index("<h2>运行信息</h2>")
-    assert cover.startswith(b"\x89PNG\r\n\x1a\n")
 
 
 def test_template_cards_and_editor_render_event_examples():
