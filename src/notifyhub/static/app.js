@@ -88,7 +88,7 @@ const state = {
   status: null,
   config: null,
   appearance: {
-    appearance_background: '', appearance_backgrounds: [],
+    appearance_background: '', appearance_background_url: '', appearance_backgrounds: [],
     appearance_glass_opacity: 50, appearance_glass_brightness: 45,
     appearance_glass_blur: 10, appearance_mask_opacity: 50,
   },
@@ -109,6 +109,7 @@ const state = {
   lastPage: '',
   modalSubmit: null,
   modalReturnFocus: null,
+  modalRevision: 0,
   logTimer: null,
   pluginLogTimer: null,
 }
@@ -243,7 +244,16 @@ function applyAppearance(appearance = state.appearance, cache = true) {
   const brightness = number('appearance_glass_brightness', 45)
   const blur = number('appearance_glass_blur', 10)
   const mask = number('appearance_mask_opacity', 50)
-  const background = /^\/api\/appearance\/background\/[0-9a-f]{64}\.(?:png|jpg|webp|gif|avif)$/.test(appearance?.appearance_background || '') ? appearance.appearance_background : ''
+  const uploaded = /^\/api\/appearance\/background\/[0-9a-f]{64}\.(?:png|jpg|webp|gif|avif)$/.test(appearance?.appearance_background || '') ? appearance.appearance_background : ''
+  let remote = ''
+  try {
+    const url = new URL(String(appearance?.appearance_background_url || ''))
+    if (['http:', 'https:'].includes(url.protocol) && !url.username && !url.password) {
+      url.searchParams.set('_notify_refresh', String(Math.floor(performance.timeOrigin)))
+      remote = url.href
+    }
+  } catch { /* invalid URLs are rejected by the server */ }
+  const background = remote || uploaded
   root.style.setProperty('--glass-opacity', `${100 - opacity}%`)
   root.style.setProperty('--glass-brightness', (0.65 + brightness / 100 * .7).toFixed(2))
   root.style.setProperty('--glass-dim', Math.max(0, (50 - brightness) / 50 * .28).toFixed(3))
@@ -255,7 +265,8 @@ function applyAppearance(appearance = state.appearance, cache = true) {
   root.dataset.hasBackground = background ? 'true' : 'false'
   if (cache) {
     localStorage.setItem('notify-appearance', JSON.stringify({
-      appearance_background: background,
+      appearance_background: uploaded,
+      appearance_background_url: appearance?.appearance_background_url || '',
       appearance_glass_opacity: opacity,
       appearance_glass_brightness: brightness,
       appearance_glass_blur: blur,
@@ -544,7 +555,8 @@ function renderPlugins() {
     : state.pluginStoreLoading ? '<span class="form-note">正在加载插件源…</span>' : '<span class="form-note">还没有插件源，点击右上角“插件源”添加地址。</span>'
   const installedCards = plugins.length ? `<div class="entity-grid">${plugins.map(plugin => {
     const canTest = (plugin.capabilities || []).includes('notify.test')
-    return `<article class="entity-card"><div class="entity-head"><span class="entity-icon">${icon('plug')}</span><div class="entity-title"><h3>${escapeHtml(plugin.name || plugin.id)}</h3><p>${escapeHtml(plugin.id)} · v${escapeHtml(plugin.version || '—')}</p></div><span class="status-badge active">已加载</span></div><div class="entity-body"><p>${escapeHtml(plugin.description || '暂无插件说明')}</p><div>${(plugin.capabilities || []).map(value => `<span class="tag purple">${escapeHtml(value)}</span>`).join(' ')}</div></div><div class="entity-actions">${plugin.has_frontend ? `<button class="button secondary small" data-action="open-plugin" data-id="${escapeHtml(plugin.id)}">打开页面</button>` : ''}<button class="button secondary small" data-action="plugin-docs" data-id="${escapeHtml(plugin.id)}">使用说明</button><button class="button secondary small" data-action="plugin-logs" data-id="${escapeHtml(plugin.id)}">日志</button>${canTest ? `<button class="button secondary small" data-action="test-plugin" data-id="${escapeHtml(plugin.id)}">${icon('send')}测试通知</button>` : ''}<span class="spacer"></span><button class="button secondary small" data-action="edit-plugin" data-id="${escapeHtml(plugin.id)}">${icon('settings')}配置</button></div></article>`
+    const id = escapeHtml(plugin.id)
+    return `<article class="entity-card"><div class="entity-head"><span class="entity-icon">${icon('plug')}</span><div class="entity-title"><h3>${escapeHtml(plugin.name || plugin.id)}</h3><p>${id} · v${escapeHtml(plugin.version || '—')}</p></div><span class="status-badge active">已加载</span></div><div class="entity-body"><p>${escapeHtml(plugin.description || '暂无插件说明')}</p><div>${(plugin.capabilities || []).map(value => `<span class="tag purple">${escapeHtml(value)}</span>`).join(' ')}</div></div><div class="entity-actions plugin-actions"><div class="plugin-action-group">${plugin.has_frontend ? `<button class="icon-button plugin-action" data-action="open-plugin" data-id="${id}" aria-label="打开插件页面" title="打开页面">${icon('chevron')}</button>` : ''}<button class="icon-button plugin-action" data-action="plugin-docs" data-id="${id}" aria-label="查看使用说明" title="使用说明">${icon('file')}</button><button class="icon-button plugin-action" data-action="plugin-logs" data-id="${id}" aria-label="查看插件日志" title="日志">${icon('terminal')}</button>${canTest ? `<button class="icon-button plugin-action" data-action="test-plugin" data-id="${id}" aria-label="测试通知" title="测试通知">${icon('send')}</button>` : ''}</div><button class="icon-button plugin-action" data-action="edit-plugin" data-id="${id}" aria-label="配置插件" title="配置">${icon('settings')}</button></div></article>`
   }).join('')}</div>`
     : '<div class="empty-state"><p>当前没有已加载的可选插件</p></div>'
   const storeCards = catalog.length ? `<div class="entity-grid">${catalog.map(plugin => {
@@ -590,16 +602,17 @@ function renderSettings() {
   const app = state.config.app || {}
   const appearance = state.appearance || {}
   const backgrounds = appearance.appearance_backgrounds || []
+  const randomBackgroundUrl = appearance.appearance_background_url || ''
   const gallery = backgrounds.length ? backgrounds.map((background, index) => {
     const filename = background.split('/').pop()
-    const active = background === appearance.appearance_background
+    const active = !randomBackgroundUrl && background === appearance.appearance_background
     return `<div class="appearance-thumb ${active ? 'active' : ''}" data-action="select-background" data-background="${escapeHtml(background)}" role="button" tabindex="0" aria-label="使用背景图 ${index + 1}" aria-pressed="${active}" style="background-image:url('${escapeHtml(background)}')"><button class="appearance-delete" data-action="delete-background" data-filename="${escapeHtml(filename)}" type="button" title="删除背景图" aria-label="删除背景图 ${index + 1}">${icon('trash')}</button></div>`
   }).join('') : '<div class="appearance-empty">尚未上传背景图</div>'
   const slider = (key, label, value) => `<label class="appearance-slider"><span>${label}</span><output id="${key}-value">${escapeHtml(value)}%</output><input id="${key}" data-appearance-setting type="range" min="0" max="100" value="${escapeHtml(value)}"></label>`
   return `<div class="settings-grid">
     <section class="panel"><header class="panel-header"><div><h2>站点设置</h2><p>管理后台的基础信息</p></div><button class="button secondary small" data-action="edit-settings">${icon('edit')}编辑</button></header><div class="panel-body settings-list"><div class="info-row"><span>应用名称</span><strong>${escapeHtml(app.app_name || 'Notify')}</strong></div><div class="info-row"><span>站点地址</span><strong>${escapeHtml(app.site_url || location.origin)}</strong></div><div class="info-row"><span>记录保留</span><strong>${escapeHtml(app.record_retention_days || 90)} 天</strong></div><div class="info-row"><span>GitHub Token</span><code class="code">${escapeHtml(app.github_token || '未配置')}</code></div></div></section>
     <section class="panel"><header class="panel-header"><div><h2>管理员安全</h2><p>修改管理后台登录密码</p></div><button class="button secondary small" data-action="change-password">${icon('settings')}修改密码</button></header><div class="panel-body settings-list"><div class="info-row"><span>当前账户</span><strong>${escapeHtml(state.session?.username || 'admin')}</strong></div><div class="info-row"><span>密码状态</span><span class="status-badge ${state.status.password_change_required ? 'pending' : 'active'}">${state.status.password_change_required ? '需要修改' : '已设置'}</span></div><p class="form-note">密码会保存到数据目录，修改后立即生效，并使其他登录会话失效。</p></div></section>
-    <section class="panel settings-wide appearance-settings"><header class="panel-header"><div><h2>外观</h2><p>首页背景与界面质感</p></div></header><div class="panel-body"><h3>背景图</h3><p class="form-note">建议使用 16:9 的高分辨率横图。图片保存在服务端图库中，最多保留 20 张；点选即可切换，同一实例的其他设备也会使用该设置。</p><div class="appearance-gallery">${gallery}</div><div class="appearance-actions"><button class="button secondary" data-action="upload-background" type="button">${icon('upload')}上传背景图</button><button class="button danger" data-action="clear-background" type="button">使用默认背景</button></div></div></section>
+    <section class="panel settings-wide appearance-settings"><header class="panel-header"><div><h2>外观</h2><p>首页背景与界面质感</p></div></header><div class="panel-body"><div class="appearance-remote"><div><h3>随机图接口</h3><p>每次刷新页面重新请求一张背景图，不会下载到 Notify 容器。</p></div><div class="appearance-remote-control"><label class="field"><span>图片接口 URL</span><input id="random-background-url" type="url" value="${escapeHtml(randomBackgroundUrl)}" placeholder="https://t.alcy.cc/pc" autocomplete="off"><small>仅支持无账号密码的 HTTP 或 HTTPS 地址</small></label><button class="button primary" data-action="save-random-background" type="button">${randomBackgroundUrl ? '更新接口' : '启用随机图'}</button></div></div><div class="appearance-divider"><span>或使用已上传图片</span></div><h3>本地背景图库</h3><p class="form-note">建议使用 16:9 的高分辨率横图。图片保存在服务端图库中，最多保留 20 张；点选即可切换，同一实例的其他设备也会使用该设置。</p><div class="appearance-gallery">${gallery}</div><div class="appearance-actions"><button class="button secondary" data-action="upload-background" type="button">${icon('upload')}上传背景图</button><button class="button danger" data-action="clear-background" type="button">使用默认背景</button></div></div></section>
     <section class="panel settings-wide appearance-texture"><header class="panel-header"><div><h2>界面质感</h2><p>调整液态玻璃卡片的透明度、明暗与模糊效果</p></div></header><div class="panel-body">${slider('glass-opacity', '玻璃透明度', appearance.appearance_glass_opacity ?? 50)}${slider('glass-brightness', '玻璃明暗', appearance.appearance_glass_brightness ?? 45)}${slider('glass-blur', '玻璃折射与模糊', appearance.appearance_glass_blur ?? 10)}${slider('mask-opacity', '页面明暗', appearance.appearance_mask_opacity ?? 50)}<div class="appearance-footer"><span class="form-note">保存后跨设备生效</span><button class="button danger" data-action="reset-appearance" type="button">恢复默认</button><button class="button primary" data-action="save-appearance" type="button">保存</button></div></div></section>
     <section class="panel settings-wide"><header class="panel-header"><div><h2>运行信息</h2><p>当前实例状态</p></div><span class="status-badge active">正常</span></header><div class="panel-body settings-list"><div class="info-row"><span>系统版本</span><code class="code">v${escapeHtml(state.status.version)}</code></div><div class="info-row"><span>通知渠道</span><strong>${state.status.channels}</strong></div><div class="info-row"><span>通知通道</span><strong>${state.status.routes}</strong></div><div class="info-row"><span>插件任务</span><span class="status-badge ${state.status.plugin_tasks ? 'active' : 'inactive'}">${state.status.plugin_tasks ? '运行中' : '已暂停'}</span></div><div class="info-row"><span>API 文档</span><a class="code" href="/docs" target="_blank" rel="noopener">/docs</a></div></div></section>
   </div>`
@@ -628,7 +641,15 @@ function formField(name, label, type = 'text', value = '', placeholder = '', hin
   return `<label class="field"><span>${escapeHtml(label)}</span>${control}${note ? `<small>${escapeHtml(note)}</small>` : ''}</label>`
 }
 
+function stopPluginLogRefresh() {
+  if (!state.pluginLogTimer) return
+  clearInterval(state.pluginLogTimer)
+  state.pluginLogTimer = null
+}
+
 function openModal({ eyebrow = '通知管理', title, body, submitText = '保存', wide = false, noSubmit = false, onSubmit = null }) {
+  stopPluginLogRefresh()
+  state.modalRevision += 1
   const modal = $('#modal')
   if (!modal.open) state.modalReturnFocus = document.activeElement
   modal.classList.toggle('wide', wide)
@@ -647,10 +668,7 @@ function openModal({ eyebrow = '通知管理', title, body, submitText = '保存
 function closeModal() {
   const modal = $('#modal')
   if (modal.open) modal.close()
-  if (state.pluginLogTimer) {
-    clearInterval(state.pluginLogTimer)
-    state.pluginLogTimer = null
-  }
+  stopPluginLogRefresh()
   state.modalSubmit = null
 }
 
@@ -918,13 +936,14 @@ function openPluginDocs(plugin) {
 }
 
 async function openPluginLogs(plugin) {
-  if (state.pluginLogTimer) clearInterval(state.pluginLogTimer)
+  openModal({ eyebrow: '插件日志', title: plugin.name || plugin.id, body: '<p class="form-note">正在加载日志…</p>', wide: true, noSubmit: true })
+  const revision = state.modalRevision
   const render = logs => {
+    if (revision !== state.modalRevision || !$('#modal').open) return
     const status = plugin.running ? '<span class="status-badge active">运行中</span>' : '<span class="status-badge failed">已停止</span>'
     const body = logs.length ? `<div class="plugin-log-meta"><span>${status}</span><span class="form-note">最近 ${logs.length} 条</span></div><div class="log-view">${logs.slice().reverse().map(item => `<div class="log-line"><span class="log-time">${escapeHtml(item.time)}</span><span class="log-level ${escapeHtml(item.level)}">${escapeHtml(item.level)}</span><span class="log-name">${escapeHtml(item.logger)}</span><span>${escapeHtml(item.message)}</span></div>`).join('')}</div>` : `<div class="plugin-log-meta"><span>${status}</span></div><p class="form-note">暂无插件日志。Worker 启动、任务执行和异常会显示在这里。</p>`
     $('#modal-body').innerHTML = body
   }
-  openModal({ eyebrow: '插件日志', title: plugin.name || plugin.id, body: '<p class="form-note">正在加载日志…</p>', wide: true, noSubmit: true })
   const refresh = async () => {
     try { render(await api(`/api/admin/plugins/${encodeURIComponent(plugin.id)}/logs?limit=300`)) } catch (error) { render([{ time: '', level: 'ERROR', logger: 'notify', message: error.message }]) }
   }
@@ -1274,8 +1293,12 @@ async function handleAction(action, target) {
   if (action === 'delivery-detail') return openDeliveryDetail(state.deliveries.find(item => String(item.id) === String(target.dataset.id)))
   if (action === 'edit-settings') return openSettingsForm()
   if (action === 'upload-background') return uploadAppearanceBackground()
-  if (action === 'select-background') return saveAppearance({ appearance_background: target.dataset.background || '' }, '背景图已切换')
-  if (action === 'clear-background') return saveAppearance({ appearance_background: '' }, '已使用默认背景')
+  if (action === 'save-random-background') {
+    const url = String($('#random-background-url')?.value || '').trim()
+    return saveAppearance({ ...state.appearance, appearance_background_url: url }, url ? '随机背景已启用' : '随机背景已关闭')
+  }
+  if (action === 'select-background') return saveAppearance({ ...state.appearance, appearance_background: target.dataset.background || '', appearance_background_url: '' }, '背景图已切换')
+  if (action === 'clear-background') return saveAppearance({ ...state.appearance, appearance_background: '', appearance_background_url: '' }, '已使用默认背景')
   if (action === 'save-appearance') return saveAppearance(appearanceFromControls(), '界面质感已保存')
   if (action === 'reset-appearance') {
     const defaults = { 'glass-opacity': 50, 'glass-brightness': 45, 'glass-blur': 10, 'mask-opacity': 50 }
@@ -1370,6 +1393,8 @@ $('#mobile-backdrop').addEventListener('click', closeMobileMenu)
 window.addEventListener('resize', syncMenuButton)
 
 $('#modal').addEventListener('close', () => {
+  stopPluginLogRefresh()
+  state.modalRevision += 1
   state.modalSubmit = null
   const returnFocus = state.modalReturnFocus
   state.modalReturnFocus = null

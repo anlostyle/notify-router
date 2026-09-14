@@ -11,6 +11,7 @@ import uuid
 from datetime import date, datetime, timedelta
 from importlib.resources import files
 from pathlib import Path
+from urllib.parse import urlsplit
 from zoneinfo import ZoneInfo
 
 from jinja2 import meta
@@ -21,6 +22,7 @@ _jinja = SandboxedEnvironment(autoescape=False)
 _appearance_background_re = re.compile(r"^/api/appearance/background/([0-9a-f]{64}\.(?:png|jpg|webp|gif|avif))$")
 _appearance_defaults = {
     "appearance_background": "",
+    "appearance_background_url": "",
     "appearance_backgrounds": [],
     "appearance_glass_opacity": 50,
     "appearance_glass_brightness": 45,
@@ -403,6 +405,17 @@ class Store:
         except (TypeError, ValueError):
             return default
 
+    @staticmethod
+    def _appearance_remote_url(value):
+        value = str(value or "").strip()
+        if not value:
+            return ""
+        try:
+            parsed = urlsplit(value)
+            return value if parsed.scheme in {"http", "https"} and parsed.hostname and not parsed.username and not parsed.password else ""
+        except ValueError:
+            return ""
+
     @property
     def appearance(self):
         with self._appearance_lock:
@@ -424,6 +437,7 @@ class Store:
             values["appearance_backgrounds"] = backgrounds[-20:]
             selected = str(saved.get("appearance_background") or "")
             values["appearance_background"] = selected if selected in values["appearance_backgrounds"] else ""
+            values["appearance_background_url"] = self._appearance_remote_url(saved.get("appearance_background_url"))
             for key in (
                 "appearance_glass_opacity",
                 "appearance_glass_brightness",
@@ -452,6 +466,11 @@ class Store:
             if selected and selected not in values["appearance_backgrounds"]:
                 raise ValueError("selected background is not in the instance gallery")
             values["appearance_background"] = selected
+            if "appearance_background_url" in payload:
+                remote_url = str(payload.get("appearance_background_url") or "").strip()
+                values["appearance_background_url"] = self._appearance_remote_url(remote_url)
+                if remote_url and not values["appearance_background_url"]:
+                    raise ValueError("随机图接口必须是无账号密码的 HTTP 或 HTTPS 地址")
             for key in (
                 "appearance_glass_opacity",
                 "appearance_glass_brightness",
@@ -499,6 +518,7 @@ class Store:
             removed = backgrounds[:-20]
             values["appearance_backgrounds"] = backgrounds[-20:]
             values["appearance_background"] = url
+            values["appearance_background_url"] = ""
             self._write_appearance(values)
             for item in removed:
                 match = _appearance_background_re.fullmatch(item)
