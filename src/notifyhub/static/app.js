@@ -12,6 +12,7 @@ const PAGES = {
   logs: ['运行状态', '系统日志', '查看当前进程最近的运行日志'],
   settings: ['系统管理', '系统设置', '管理站点信息、安全参数、运行环境与界面外观'],
 }
+const DELIVERY_BATCH_SIZE = 30
 
 const CHANNEL_TYPES = {
   qywx: {
@@ -102,6 +103,7 @@ const state = {
   monitors: { items: [], events: [], summary: {} },
   tasks: { items: [], runs: [], summary: {} },
   deliveries: [],
+  deliveryVisible: DELIVERY_BATCH_SIZE,
   logs: [],
   query: '',
   deliveryStatus: '',
@@ -388,6 +390,7 @@ async function renderPage() {
   try {
     if (page === 'deliveries') {
       $('#page-content').innerHTML = '<div class="skeleton"></div>'
+      state.deliveryVisible = DELIVERY_BATCH_SIZE
       const filters = { ...state.deliveryFilters, status: state.deliveryStatus }
       const suffix = Object.entries(filters).filter(([, value]) => value).map(([key, value]) => `&${key}=${encodeURIComponent(value)}`).join('')
       state.deliveries = await api(`/api/admin/deliveries?limit=300${suffix}`)
@@ -585,11 +588,14 @@ function loadPluginStore() {
 
 function renderDeliveries() {
   const deliveries = state.deliveries.filter(item => matches(item.title, item.content, item.route_name, item.channel_name, item.last_error))
+  const visible = deliveries.slice(0, state.deliveryVisible)
   const filter = (key, placeholder) => `<input class="filter-input delivery-filter" data-filter="${key}" value="${escapeHtml(state.deliveryFilters[key])}" placeholder="${placeholder}">`
   const toolbar = `<div class="toolbar"><select id="delivery-status" class="filter-select"><option value="">全部状态</option>${['sent', 'failed', 'retry', 'pending', 'processing'].map(status => `<option value="${status}" ${state.deliveryStatus === status ? 'selected' : ''}>${statusText(status)}</option>`).join('')}</select>${filter('route_id', '路由 ID')}${filter('channel_name', '渠道名称')}${filter('error', '失败原因')}<input type="date" class="filter-input delivery-filter" data-filter="date_from" value="${state.deliveryFilters.date_from}"><input type="date" class="filter-input delivery-filter" data-filter="date_to" value="${state.deliveryFilters.date_to}"><span class="tag">共 ${deliveries.length} 条</span></div>`
   if (!deliveries.length) return toolbar + emptyState('history', state.query ? '没有匹配的投递记录' : '暂无投递记录', '新通知进入队列后会显示在这里')
-  return `${toolbar}<div class="table-wrap"><table class="data-table"><thead><tr><th>消息</th><th>通道 → 渠道</th><th>状态</th><th>尝试</th><th>时间</th><th>操作</th></tr></thead><tbody>${deliveries.map(item => `
+  const controls = deliveries.length > DELIVERY_BATCH_SIZE ? `<div class="delivery-history-actions">${state.deliveryVisible < deliveries.length ? '<button class="button secondary" data-action="load-more-deliveries">加载更多</button>' : ''}${state.deliveryVisible > DELIVERY_BATCH_SIZE ? '<button class="button secondary" data-action="collapse-deliveries">收起历史</button>' : ''}</div>` : ''
+  return `${toolbar}<div class="table-wrap"><table class="data-table"><thead><tr><th>消息</th><th>通道 → 渠道</th><th>状态</th><th>尝试</th><th>时间</th><th>操作</th></tr></thead><tbody>${visible.map(item => `
     <tr><td data-label="消息"><div class="cell-title"><strong class="truncate">${escapeHtml(item.title || '无标题')}</strong><small class="truncate">${escapeHtml(item.content || '')}</small></div></td><td data-label="投递链路">${escapeHtml(item.route_name)} → ${escapeHtml(item.channel_name)}</td><td data-label="状态"><span class="status-badge ${escapeHtml(item.status)}">${escapeHtml(statusText(item.status))}</span></td><td data-label="尝试">${escapeHtml(item.attempts || 0)}</td><td data-label="时间">${escapeHtml(formatDate(item.updated_at || item.outbox_created_at))}</td><td data-label="操作"><div class="inline-actions"><button class="icon-button" data-action="delivery-detail" data-id="${item.id}" aria-label="查看详情">${icon('more')}</button>${item.status === 'failed' ? `<button class="icon-button" data-action="retry-delivery" data-id="${item.id}" aria-label="重试">${icon('refresh')}</button>` : ''}</div></td></tr>`).join('')}</tbody></table></div>`
+    + controls
 }
 
 function renderLogs() {
@@ -1291,6 +1297,8 @@ async function handleAction(action, target) {
     return renderPage()
   }
   if (action === 'delivery-detail') return openDeliveryDetail(state.deliveries.find(item => String(item.id) === String(target.dataset.id)))
+  if (action === 'load-more-deliveries') { state.deliveryVisible += DELIVERY_BATCH_SIZE; return renderCurrent() }
+  if (action === 'collapse-deliveries') { state.deliveryVisible = DELIVERY_BATCH_SIZE; return renderCurrent() }
   if (action === 'edit-settings') return openSettingsForm()
   if (action === 'upload-background') return uploadAppearanceBackground()
   if (action === 'save-random-background') {
@@ -1403,6 +1411,7 @@ $('#modal').addEventListener('close', () => {
 
 $('#global-search').addEventListener('input', event => {
   state.query = event.target.value
+  if (currentPage() === 'deliveries') state.deliveryVisible = DELIVERY_BATCH_SIZE
   renderCurrent()
 })
 

@@ -409,6 +409,7 @@ svg { width: 20px; height: 20px; fill: none; stroke: currentColor; stroke-width:
 
 /* ---------- 表格 ---------- */
 .table-wrap { overflow: auto; border: 1px solid var(--border); border-radius: var(--radius); background: var(--surface); box-shadow: var(--shadow-sm); }
+.delivery-history-actions { display: flex; justify-content: center; gap: 10px; margin-top: 16px; }
 .data-table { width: 100%; border-collapse: collapse; white-space: nowrap; }
 .data-table th, .data-table td { padding: 12px 16px; border-bottom: 1px solid var(--border); text-align: left; }
 .data-table th { position: sticky; top: 0; color: var(--muted); background: var(--surface-soft); font-size: 10px; font-weight: 750; letter-spacing: .05em; text-transform: uppercase; }

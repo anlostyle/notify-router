@@ -26,6 +26,11 @@ def test_login_page_does_not_prefill_admin_username():
     assert "appearance_background_url" in script
     assert "save-random-background" in script
     assert "plugin-action-group" in script
+    assert "const DELIVERY_BATCH_SIZE = 30" in script
+    assert "deliveries.slice(0, state.deliveryVisible)" in script
+    assert "state.deliveryVisible += DELIVERY_BATCH_SIZE" in script
+    assert 'data-action="load-more-deliveries"' in script
+    assert 'data-action="collapse-deliveries"' in script
     assert ".brand-mark, #user-avatar" in script
     assert script.index("<h2>界面质感</h2>") < script.index("<h2>运行信息</h2>")
 
