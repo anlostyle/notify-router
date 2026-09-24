@@ -87,11 +87,11 @@
     {
       "id": "wx-nextemby-card",
       "name": "NextEmby 卡密助手",
-      "version": "0.2.0",
+      "version": "0.3.0",
       "description": "通过企业微信让 NextEmby 生成邀请卡密，并回复可直接转发的注册信息。",
       "author": "Claude",
-      "archive_url": "https://github.com/anlostyle/notify-router/archive/3c1cba340f7c74212f7134deaf90e059fe9885ea.zip",
-      "subdir": "notify-router-3c1cba340f7c74212f7134deaf90e059fe9885ea/plugins/wx_nextemby_card"
+      "archive_url": "https://github.com/anlostyle/notify-router/archive/refs/heads/master.zip",
+      "subdir": "notify-router-master/plugins/wx_nextemby_card"
     }
   ]
 }

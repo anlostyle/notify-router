@@ -5,10 +5,10 @@
   "author": "Claude",
   "logo": "",
   "thumbnailurl": "",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "schema_version": 2,
   "capabilities": ["integration.provider", "ui.page"],
-  "documentation": "在企业微信自建应用里发送「卡密 2」即可在默认站点生成 2 张卡密，每张卡密单独回复一条可直接转发的注册说明。支持两个 NextEmby 站点；插件用 NextEmby API 密钥调用其卡密接口，只响应授权的企业微信 UserID。",
+  "documentation": "在企业微信自建应用里发送「卡密1」或「卡密2」即可在站点 1 或站点 2 生成卡密，每张卡密单独回复一条可直接转发的注册说明。支持两个 NextEmby 站点；插件用 NextEmby API 密钥调用其卡密接口，只响应授权的企业微信 UserID。",
   "path": "/wx-nextemby-card",
   "configField": [
     {"fieldName": "allowed_users", "fieldType": "string", "label": "授权 UserID", "helpText": "企业微信成员 UserID，多个用逗号分隔；留空时拒绝所有人，并回复发送者自己的 UserID", "defaultValue": ""},
@@ -38,10 +38,10 @@
     {"fieldType": "title", "value": "企业微信回调地址"},
     {"fieldType": "code", "value": "{site_url}/api/plugins/wx-nextemby-card/chat"},
     {"fieldType": "title", "value": "命令"},
-    {"fieldType": "text", "value": "卡密 2：默认站点生成 2 张默认天数、默认模板的卡密"},
-    {"fieldType": "text", "value": "卡密 站点2名称 2 180 sviiip：指定站点、张数、天数、模板（顺序不限，第一个数字是张数，第二个是天数，也可写 180天）"},
-    {"fieldType": "text", "value": "库存 [站点]：查看未用完的批次；记录 [站点]：最近兑换记录"},
-    {"fieldType": "text", "value": "作废 批次号 [站点]：作废该批次未使用的卡密"},
+    {"fieldType": "text", "value": "卡密1 / 卡密2：在站点 1 / 站点 2 生成 1 张默认天数、默认模板的卡密；只发「卡密」默认站点 1"},
+    {"fieldType": "text", "value": "卡密2 3张 180天 模板名：指定张数、天数、模板（张数写「张」，天数写「天」）"},
+    {"fieldType": "text", "value": "库存1 / 记录2：查看未用完的批次 / 最近兑换记录"},
+    {"fieldType": "text", "value": "作废1 批次号：作废站点 1 该批次未使用的卡密"},
     {"fieldType": "text", "value": "帮助：查看命令说明"}
   ],
   "frontend_page": {}

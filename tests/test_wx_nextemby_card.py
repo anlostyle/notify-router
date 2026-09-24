@@ -38,29 +38,33 @@ def plugin_config(monkeypatch):
 
 
 def test_parse_defaults_to_first_site_and_first_template():
-    command = commands.parse_command("卡密 2")
+    command = commands.parse_command("卡密")
     assert command.error == ""
-    assert (command.site.name, command.count, command.days, command.template) == ("aemby", 2, 365, "viiiip")
+    assert (command.site.name, command.count, command.days, command.template) == ("aemby", 1, 365, "viiiip")
     assert command.site.register_url == "https://nextemby.aemby.test/login"
 
 
-def test_parse_site_days_and_template_in_any_order():
-    command = commands.parse_command("发卡 sviiip 180天 aemby 3张")
+def test_number_after_command_selects_site():
+    for text, slot in [("卡密1", "site1"), ("卡密2", "site2"), ("卡密 2", "site2"), ("2", "site2"), ("库存2", "site2")]:
+        command = commands.parse_command(text)
+        assert (command.error, command.site.slot, command.count) == ("", slot, 1), text
+    assert commands.parse_command("卡密3").error.startswith("没有站点3，可用：1=aemby、2=avavv")
+
+
+def test_parse_count_days_template_and_site_name():
+    command = commands.parse_command("卡密1 sviiip 180天 3张")
     assert (command.site.slot, command.count, command.days, command.template) == ("site1", 3, 180, "sviiip")
-
-    command = commands.parse_command("卡密 avavv 2 30")
+    command = commands.parse_command("发卡 avavv 2张 30天")
     assert (command.site.slot, command.count, command.days, command.template) == ("site2", 2, 30, "viiiip")
-
-
-def test_parse_bare_number_generates_cards():
-    command = commands.parse_command("3")
-    assert (command.action, command.count) == ("generate", 3)
+    command = commands.parse_command("作废2 20260924-101011")
+    assert (command.site.slot, command.batch_id) == ("site2", "20260924-101011")
 
 
 def test_parse_rejects_unknown_template_and_limits():
-    assert "可用模板：viiiip、sviiip" in commands.parse_command("卡密 2 vip").error
-    assert "1 到 10" in commands.parse_command("卡密 50").error
-    assert "天数" in commands.parse_command("卡密 1 99999").error
+    assert "可用模板：viiiip、sviiip" in commands.parse_command("卡密1 vip").error
+    assert "张数写成 2张" in commands.parse_command("卡密1 5").error
+    assert "1 到 10" in commands.parse_command("卡密1 50张").error
+    assert "天数" in commands.parse_command("卡密1 99999天").error
     assert commands.parse_command("作废").error.startswith("用法")
     assert commands.parse_command("你好").action == "help"
 
@@ -156,14 +160,14 @@ def fake_client(monkeypatch):
 
 
 def test_handle_generate_returns_one_message_per_card_and_summary(fake_client):
-    replies = commands.handle_command("卡密 avavv 2")
+    replies = commands.handle_command("卡密2 2张")
     assert fake_client.calls == [(2, 365, "viiiip")]
     assert len(replies) == 3
     assert "邀请码：CODE-1" in replies[0]
     assert "注册地址：https://nextemby.avavv.test/login" in replies[0]
     assert "Emby 服务器" not in replies[0]
     assert "批次：LOT7" in replies[2]
-    assert replies[2].endswith("作废 LOT7 avavv")
+    assert replies[2].endswith("作废2 LOT7")
 
 
 def test_handle_stock_history_and_revoke(fake_client):

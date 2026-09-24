@@ -41,6 +41,7 @@ COMMAND_PATTERN = re.compile(
 )
 DAYS_PATTERN = re.compile(r"^(\d+)\s*(?:天|d)$", re.IGNORECASE)
 COUNT_PATTERN = re.compile(r"^(\d+)\s*张$")
+SITE_NUMBER_PATTERN = re.compile(r"\d{1,2}")
 
 
 @dataclass
@@ -76,7 +77,7 @@ def parse_command(text: str) -> Command:
     if match:
         action = ACTIONS[match.group(1).lower()]
         tokens = match.group(2).split()
-    elif re.fullmatch(r"\d+", text):
+    elif SITE_NUMBER_PATTERN.fullmatch(text):
         action, tokens = "generate", [text]
     else:
         return Command("help")
@@ -85,9 +86,16 @@ def parse_command(text: str) -> Command:
     if not sites:
         return Command(action, error="插件还没有配置 NextEmby 站点")
 
+    # A bare number right after the command picks the site: 卡密1, 卡密 2, 库存2.
     site = None
     rest = []
     for token in tokens:
+        if site is None and SITE_NUMBER_PATTERN.fullmatch(token):
+            index = int(token)
+            if not 1 <= index <= len(sites):
+                return Command(action, error=f"没有站点{index}，可用：" + "、".join(f"{i}={s.name}" for i, s in enumerate(sites, 1)))
+            site = sites[index - 1]
+            continue
         found = _find_site(token, sites)
         if found and site is None:
             site = found
@@ -115,12 +123,8 @@ def parse_command(text: str) -> Command:
         elif count_match := COUNT_PATTERN.match(token):
             count = int(count_match.group(1))
         elif token.isdigit():
-            if count is None:
-                count = int(token)
-            elif days is None:
-                days = int(token)
-            else:
-                unknown.append(token)
+            command.error = f"无法识别：{token}；张数写成 2张，天数写成 180天"
+            return command
         elif command.site.templates and _match_template(token, command.site):
             template = _match_template(token, command.site)
         elif not command.site.templates and template is None:
@@ -169,17 +173,15 @@ def _format_time(value) -> str:
 
 def help_text() -> str:
     sites = config.sites
-    site_names = "、".join(site.name for site in sites) or "未配置"
+    site_lines = "\n".join(f"卡密{index} → {site.name}" for index, site in enumerate(sites, 1)) or "未配置站点"
     return (
         "🎫 NextEmby 卡密助手\n\n"
-        "卡密 2 → 生成 2 张卡密\n"
-        "卡密 2 180 → 2 张 180 天\n"
-        "卡密 站点名 2 365天 模板 → 指定站点、天数、模板\n"
-        "库存 [站点] → 未用完的批次\n"
-        "记录 [站点] → 最近兑换记录\n"
-        "作废 批次号 [站点] → 作废该批次未使用的卡密\n\n"
-        f"站点：{site_names}（默认 {sites[0].name if sites else '-'}）\n"
-        f"默认天数：{config.default_days}，单次最多 {config.max_count} 张"
+        f"{site_lines}\n"
+        "卡密1 2张 180天 → 指定张数、天数\n"
+        "卡密1 模板名 → 指定模板\n"
+        "库存1 / 记录1 → 未用完批次 / 最近兑换\n"
+        "作废 批次号 → 作废该批次未使用的卡密（站点2 写成 作废2 批次号）\n\n"
+        f"不写数字时默认站点1；默认 {config.default_days} 天，单次最多 {config.max_count} 张"
     )
 
 
@@ -203,9 +205,8 @@ def _generate(command: Command) -> list[str]:
         for code in batch.codes
     ]
     detail = f"{command.days} 天" + (f" · {command.template}" if command.template else "")
-    summary = f"✅ {site.name} 已生成 {len(batch.codes)} 张卡密（{detail}）\n批次：{batch.batch_id}\n作废请发：作废 {batch.batch_id}"
-    if site.slot != config.sites[0].slot:
-        summary += f" {site.name}"
+    index = next(i for i, item in enumerate(config.sites, 1) if item.slot == site.slot)
+    summary = f"✅ {site.name} 已生成 {len(batch.codes)} 张卡密（{detail}）\n批次：{batch.batch_id}\n作废请发：作废{index} {batch.batch_id}"
     if len(batch.codes) != command.count:
         summary += f"\n⚠️ 请求 {command.count} 张，实际返回 {len(batch.codes)} 张"
     _record("cards.generated", site, batch.batch_id, f"生成 {len(batch.codes)} 张卡密（{detail}）")

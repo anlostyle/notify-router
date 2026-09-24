@@ -15,7 +15,7 @@ from ..utils import Site
 
 
 logger = logging.getLogger(__name__)
-USER_AGENT = "wx-nextemby-card/0.2.0"
+USER_AGENT = "wx-nextemby-card/0.3.0"
 
 
 class NextEmbyError(Exception):

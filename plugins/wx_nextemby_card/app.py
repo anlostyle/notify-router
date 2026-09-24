@@ -20,7 +20,7 @@ from .utils import config
 
 logger = logging.getLogger(__name__)
 wx_nextemby_card_router = APIRouter(prefix="/wx-nextemby-card", tags=["wx-nextemby-card"])
-APP_USER_AGENT = "wx-nextemby-card/0.2.0"
+APP_USER_AGENT = "wx-nextemby-card/0.3.0"
 HTTP_TIMEOUT = 30
 TOKEN_EXPIRE_BUFFER = 500
 MAX_TEXT_BYTES = 2000
