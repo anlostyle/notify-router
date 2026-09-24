@@ -90,8 +90,8 @@
       "version": "0.3.1",
       "description": "通过企业微信让 NextEmby 生成邀请卡密，并回复可直接转发的注册信息。",
       "author": "Claude",
-      "archive_url": "https://github.com/anlostyle/notify-router/archive/refs/heads/master.zip",
-      "subdir": "notify-router-master/plugins/wx_nextemby_card"
+      "archive_url": "https://github.com/anlostyle/notify-router/archive/d0ddbda01cb3c62e30933884b6e96041dc19db8e.zip",
+      "subdir": "notify-router-d0ddbda01cb3c62e30933884b6e96041dc19db8e/plugins/wx_nextemby_card"
     }
   ]
 }
