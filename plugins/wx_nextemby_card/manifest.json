@@ -5,10 +5,63 @@
   "author": "Claude",
   "logo": "",
   "thumbnailurl": "",
-  "version": "0.3.0",
+  "version": "0.3.1",
   "schema_version": 2,
-  "capabilities": ["integration.provider", "ui.page"],
-  "documentation": "在企业微信自建应用里发送「卡密1」或「卡密2」即可在站点 1 或站点 2 生成卡密，每张卡密单独回复一条可直接转发的注册说明。支持两个 NextEmby 站点；插件用 NextEmby API 密钥调用其卡密接口，只响应授权的企业微信 UserID。",
+  "capabilities": [
+    "integration.provider",
+    "ui.page"
+  ],
+  "documentation": {
+    "summary": "通过企业微信自建应用让 NextEmby 生成邀请卡密。每张卡密单独回复一条可直接转发给朋友的注册说明，最后附一条批次汇总。最多支持两个 NextEmby 站点，使用 NextEmby 的 API 密钥鉴权，不需要管理员密码。",
+    "setup": [
+      "在每个 NextEmby 后台的「系统设置」里生成 API 密钥。插件以请求头 Authorization: Bearer <API 密钥> 调用卡密接口；这个密钥的权限接近管理员，只填在插件配置里，不要外传。",
+      "确认 Notify Router 所在服务器能访问到 NextEmby 地址。两者不在同一台机器时，应填 NextEmby 的公网域名（例如 https://nextemby.example.com），不要填内网 IP。",
+      "企业微信管理后台 →「应用管理」→「自建」→ 创建应用，记下 AgentId 和 Secret；在「我的企业」页面底部找到企业 ID（CorpID）。在应用的「可见范围」里加入要使用插件的成员。",
+      "在应用的「企业可信 IP」里加入 Notify Router 服务器的公网出口 IP，否则插件无法回复消息（企业微信会返回 errcode 60020）。",
+      "在应用的「接收消息」→「设置 API 接收」页面：URL 填下方「回调地址」，然后点随机生成 Token 和 EncodingAESKey。先不要点保存。",
+      "回到本插件配置，填好企业微信 CorpID、Secret、AgentID、回调 Token、EncodingAESKey，保存后约等 15 秒，再回到企业微信点「保存」完成 URL 校验。插件要先有这三项才能通过校验。",
+      "填写站点 1（默认站点）：名称、NextEmby 地址、API 密钥、可用模板（与 NextEmby 用户模板名一致，逗号分隔，第一个是默认模板）、注册地址（留空则为 NextEmby 地址 + /login）、Emby 服务器地址（可选，填了会出现在发卡文案里）。有第二个站点就按同样的方式填写站点 2。",
+      "「授权 UserID」可以先留空：在企业微信里给应用随便发一条消息，它会回复你的 UserID，把它填进「授权 UserID」并保存即可。多人时用逗号分隔。"
+    ],
+    "usage": [
+      "卡密1 / 卡密2：在站点 1 / 站点 2 生成 1 张卡密，天数和模板用默认值。只发「卡密」相当于卡密1；单独发数字 1 或 2 也可以。",
+      "卡密2 3张 180天 模板名：指定张数、天数、模板，顺序不限。张数必须带「张」，天数必须带「天」，因为「卡密」后面紧跟的数字表示站点。",
+      "库存1 / 库存2：查看该站点还有未使用卡密的批次（剩余/总数）。",
+      "记录1 / 记录2：查看该站点最近 10 条兑换记录（时间、用户、卡密）。",
+      "作废1 批次号 / 作废2 批次号：作废该批次所有未使用的卡密。NextEmby 会直接删除这些卡，已兑换的不受影响。生成结果的汇总消息里会带上可以直接复制的作废命令。",
+      "帮助：显示当前「卡密1 / 卡密2」分别对应哪个站点，以及默认天数和单次上限。"
+    ],
+    "callbacks": [
+      {
+        "name": "企业微信接收消息 URL",
+        "method": "GET / POST",
+        "url": "{site_url}/api/plugins/wx-nextemby-card/chat"
+      }
+    ],
+    "examples": [
+      {
+        "title": "企业微信里发送",
+        "code": "卡密2 2张 180天"
+      },
+      {
+        "title": "每张卡的回复（默认发卡文案）",
+        "code": "🎬 站点名称 邀请码\n有效期：180 天\n注册地址：https://nextemby.example.com/login\n邀请码：NE-180D-viiiip-XXXX-XXXX\nEmby 服务器：https://emby.example.com\n打开注册地址，点「注册」，填写用户名、密码和邀请码即可。"
+      },
+      {
+        "title": "最后一条汇总",
+        "code": "✅ 站点名称 已生成 2 张卡密（180 天 · viiiip）\n批次：20260924-102558\n作废请发：作废2 20260924-102558"
+      }
+    ],
+    "notes": [
+      "只响应「授权 UserID」里的成员；其他人会收到无权限提示，插件不会去调用 NextEmby。",
+      "企业微信回调超时重试时，同一条消息（MsgId）只处理一次，不会重复发卡。",
+      "「单次最多生成张数」最大 20，默认 10，可以调小防止误操作。",
+      "发卡文案可以在配置里修改，可用变量：{site} {days} {template} {code} {register_url} {emby_url} {batch_id}。某一行用到的变量为空时，整行省略。",
+      "NextEmby 的登录页没有能直接打开「注册」页签的链接，所以默认文案会提示朋友点「注册」。如果有单独的注册域名，填到「注册地址」即可。",
+      "卡密接口（/api/admin/cards/*）是 NextEmby 网页后台使用的接口，官方 API 文档里没有列出。NextEmby 升级后如果生成失败，请先查看插件日志。",
+      "生成和作废都会记录到 Notify Router 的事件里，可以按站点和批次号追溯。"
+    ]
+  },
   "path": "/wx-nextemby-card",
   "configField": [
     {"fieldName": "allowed_users", "fieldType": "string", "label": "授权 UserID", "helpText": "企业微信成员 UserID，多个用逗号分隔；留空时拒绝所有人，并回复发送者自己的 UserID", "defaultValue": ""},
@@ -35,14 +88,18 @@
     {"fieldName": "sEncodingAESKey", "fieldType": "password", "label": "企业微信 EncodingAESKey", "defaultValue": ""}
   ],
   "helpTextField": [
-    {"fieldType": "title", "value": "企业微信回调地址"},
-    {"fieldType": "code", "value": "{site_url}/api/plugins/wx-nextemby-card/chat"},
-    {"fieldType": "title", "value": "命令"},
-    {"fieldType": "text", "value": "卡密1 / 卡密2：在站点 1 / 站点 2 生成 1 张默认天数、默认模板的卡密；只发「卡密」默认站点 1"},
-    {"fieldType": "text", "value": "卡密2 3张 180天 模板名：指定张数、天数、模板（张数写「张」，天数写「天」）"},
-    {"fieldType": "text", "value": "库存1 / 记录2：查看未用完的批次 / 最近兑换记录"},
-    {"fieldType": "text", "value": "作废1 批次号：作废站点 1 该批次未使用的卡密"},
-    {"fieldType": "text", "value": "帮助：查看命令说明"}
+    {
+      "fieldType": "title",
+      "value": "企业微信回调地址"
+    },
+    {
+      "fieldType": "code",
+      "value": "{site_url}/api/plugins/wx-nextemby-card/chat"
+    },
+    {
+      "fieldType": "text",
+      "value": "卡密1 / 卡密2 在站点 1 / 站点 2 生成卡密；卡密2 3张 180天 指定张数和天数；库存1、记录1、作废1 批次号；帮助。完整步骤见「插件说明」。"
+    }
   ],
   "frontend_page": {}
 }
