@@ -19,14 +19,12 @@ BASE_CONFIG = {
     "max_count": 10,
     "site1_name": "aemby",
     "site1_base_url": "https://nextemby.aemby.test/",
-    "site1_username": "root",
-    "site1_password": "secret",
+    "site1_api_key": "key1",
     "site1_templates": "viiiip,sviiip",
     "site1_emby_url": "https://aemby.test",
     "site2_name": "avavv",
     "site2_base_url": "https://nextemby.avavv.test",
-    "site2_username": "root",
-    "site2_password": "secret2",
+    "site2_api_key": "key2",
     "site2_templates": "viiiip",
 }
 
@@ -89,58 +87,43 @@ def _client(handler):
     return NextEmbyClient(config.site("site1"), transport=httpx.MockTransport(handler))
 
 
-def test_client_logs_in_then_generates_cards():
+def test_client_sends_bearer_key_and_generates_cards():
     calls = []
 
     def handler(request):
-        calls.append((request.method, request.url.path, request.content))
-        if request.url.path == "/api/admin/login":
-            return httpx.Response(200, json={"redirect": "/#/statistics"}, headers={"set-cookie": "sid=abc; Path=/"})
-        assert request.headers.get("cookie") == "sid=abc"
+        calls.append((request.method, request.url.path, request.headers.get("authorization"), request.content))
         return httpx.Response(200, text="BATCH_ID:LOT9\nCODE-1\nCODE-2\n", headers={"content-type": "text/plain"})
 
     batch = _client(handler).generate(2, 365, "viiiip")
     assert batch.codes == ["CODE-1", "CODE-2"]
-    assert calls[0][1] == "/api/admin/login"
-    assert json.loads(calls[0][2]) == {"username": "root", "password": "secret"}
-    assert json.loads(calls[1][2]) == {"duration_days": 365, "count": 2, "template_name": "viiiip"}
+    assert calls == [("POST", "/api/admin/cards/generate", "Bearer key1", calls[0][3])]
+    assert json.loads(calls[0][3]) == {"duration_days": 365, "count": 2, "template_name": "viiiip"}
 
 
-def test_client_relogs_in_once_when_session_expires():
-    state = {"logins": 0, "batches": 0}
-
+def test_client_reports_invalid_api_key():
     def handler(request):
-        if request.url.path == "/api/admin/login":
-            state["logins"] += 1
-            return httpx.Response(200, json={})
-        state["batches"] += 1
-        if state["batches"] == 1:
-            return httpx.Response(307, headers={"location": "/login"})
-        return httpx.Response(200, json={"status": "success", "data": [{"batch_id": "L", "total": 2, "remaining": 1}]})
+        return httpx.Response(401, json={"status": "error", "message": "Invalid or Unauthorized Agent Token"})
 
-    assert _client(handler).batches()[0]["batch_id"] == "L"
-    assert state == {"logins": 2, "batches": 2}
+    with pytest.raises(NextEmbyError, match="API 密钥无效.*Unauthorized"):
+        _client(handler).batches()
 
 
-def test_client_backs_off_after_failed_login():
-    logins = []
+def test_client_requires_api_key(plugin_config):
+    plugin_config["site1_api_key"] = ""
+    with pytest.raises(NextEmbyError, match="未配置 API 密钥"):
+        _client(lambda request: pytest.fail("should not call NextEmby")).history()
 
+
+def test_zero_card_batch_is_an_error():
     def handler(request):
-        logins.append(request.url.path)
-        return httpx.Response(401, json={"detail": "用户名或密码错误"})
+        return httpx.Response(200, text="BATCH_ID:LOT0\n", headers={"content-type": "text/plain"})
 
-    client = _client(handler)
-    with pytest.raises(NextEmbyError, match="用户名或密码错误"):
-        client.history()
-    with pytest.raises(NextEmbyError, match="秒后再试"):
-        client.history()
-    assert logins == ["/api/admin/login"]
+    with pytest.raises(NextEmbyError, match="未返回卡密"):
+        _client(handler).generate(1, 30, "viiiip")
 
 
 def test_generate_json_error_is_reported():
     def handler(request):
-        if request.url.path == "/api/admin/login":
-            return httpx.Response(200, json={})
         return httpx.Response(200, json={"status": "error", "message": "模板不存在"})
 
     with pytest.raises(NextEmbyError, match="模板不存在"):

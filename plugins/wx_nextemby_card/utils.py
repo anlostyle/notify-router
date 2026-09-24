@@ -14,8 +14,7 @@ class Site:
     slot: str
     name: str
     base_url: str
-    username: str
-    password: str
+    api_key: str
     templates: tuple[str, ...]
     register_url: str
     emby_url: str
@@ -82,8 +81,7 @@ class NextEmbyCardConfig:
             slot=slot,
             name=self._str(f"{slot}_name") or slot,
             base_url=base_url,
-            username=self._str(f"{slot}_username"),
-            password=str(self.get(f"{slot}_password") or ""),
+            api_key=self._str(f"{slot}_api_key"),
             templates=tuple(_split(self.get(f"{slot}_templates"))),
             register_url=self._str(f"{slot}_register_url") or f"{base_url}/login",
             emby_url=self._str(f"{slot}_emby_url"),

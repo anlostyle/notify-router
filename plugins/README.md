@@ -23,7 +23,7 @@ plugin files are retained under `data/plugin-backups` for rollback.
 | `nsrss` | NodeSeek and DeepFlood RSS keyword monitoring | Sites, keywords, routes, cron |
 | `reminder` | One-time, recurring, and subscription reminders | Notification routes configured in Notify Router |
 | `wx-media302-save` | Save 115 links through Media302 and Enterprise WeChat | Media302 and Enterprise WeChat credentials |
-| `wx-nextemby-card` | Generate NextEmby activation cards through Enterprise WeChat | NextEmby admin account, Enterprise WeChat application |
+| `wx-nextemby-card` | Generate NextEmby activation cards through Enterprise WeChat | NextEmby API key, Enterprise WeChat application |
 | `wx-nullbr` | Search Nullbr and save results through Media302 | Nullbr, TMDB, Media302, and Enterprise WeChat credentials |
 
 Install all plugins:
