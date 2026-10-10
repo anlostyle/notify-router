@@ -69,11 +69,11 @@
     {
       "id": "wx-flowlink-save",
       "name": "115转存-FlowLink",
-      "version": "0.4.0",
+      "version": "0.4.1",
       "description": "支持企业微信和快捷指令接收 115 分享，并交给 FlowLink 自动转存整理。",
       "author": "Codex",
-      "archive_url": "https://github.com/anlostyle/notify-router/archive/d29a7a9b7e6edd34ce6d05ea5565df98d5870bcb.zip",
-      "subdir": "notify-router-d29a7a9b7e6edd34ce6d05ea5565df98d5870bcb/plugins/wx_flowlink_save"
+      "archive_url": "https://github.com/anlostyle/notify-router/archive/70c7093b500d3a5b9bfbc59f16a574da9b197c2a.zip",
+      "subdir": "notify-router-70c7093b500d3a5b9bfbc59f16a574da9b197c2a/plugins/wx_flowlink_save"
     },
     {
       "id": "wx-nullbr",
