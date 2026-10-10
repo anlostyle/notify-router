@@ -1,4 +1,6 @@
 import asyncio
+import binascii
+import fnmatch
 import hashlib
 import hmac
 import json
@@ -8,7 +10,7 @@ import secrets
 import signal
 import threading
 import time
-from base64 import urlsafe_b64decode, urlsafe_b64encode
+from base64 import b64decode, urlsafe_b64decode, urlsafe_b64encode
 from collections import deque
 from contextlib import asynccontextmanager
 from pathlib import Path
@@ -18,7 +20,7 @@ import uvicorn
 import httpx
 from .channels import send
 from fastapi import Body, Cookie, Depends, FastAPI, File, Header, HTTPException, Request, Response, UploadFile
-from fastapi.responses import FileResponse, JSONResponse
+from fastapi.responses import FileResponse, JSONResponse, RedirectResponse
 from fastapi.security import HTTPBasic, HTTPBasicCredentials
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, ValidationError
@@ -943,8 +945,39 @@ app.include_router(build_monitor_router(store, admin_auth))
 app.include_router(build_task_router(store, admin_auth))
 
 
+# WeCom callbacks verify their own signatures; everything else needs a console login
+# unless the plugin manifest lists the path in "public_paths".
+DEFAULT_PUBLIC_PLUGIN_PATHS = ("chat",)
+
+
+def _plugin_path_public(plugin_id, path):
+    manifest = plugin_supervisor.manifest_for(plugin_id) or {}
+    patterns = manifest.get("public_paths")
+    if not isinstance(patterns, list):
+        patterns = DEFAULT_PUBLIC_PLUGIN_PATHS
+    path = path.strip("/")
+    return any(fnmatch.fnmatchcase(path, str(pattern).strip("/")) for pattern in patterns)
+
+
+def _request_is_admin(request: Request):
+    if _valid_session(request.cookies.get("notify_session")):
+        return True
+    scheme, _, value = request.headers.get("authorization", "").partition(" ")
+    if scheme.lower() != "basic" or not value:
+        return False
+    try:
+        username, _, password = b64decode(value.strip(), validate=True).decode().partition(":")
+    except (ValueError, UnicodeDecodeError, binascii.Error):
+        return False
+    return _valid_admin(username, password)
+
+
 @app.api_route("/api/plugins/{plugin_id}/{path:path}", methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS", "HEAD"])
 async def plugin_proxy(plugin_id: str, path: str, request: Request):
+    if not _plugin_path_public(plugin_id, path) and not _request_is_admin(request):
+        if request.method == "GET" and "text/html" in request.headers.get("accept", ""):
+            return RedirectResponse("/#plugins", status_code=303)
+        raise HTTPException(401, "authentication required")
     return await plugin_supervisor.proxy(plugin_id, path, request)
 
 

@@ -153,3 +153,50 @@ def test_index_versions_static_assets(tmp_path, monkeypatch):
     html = TestClient(app).get("/").text
     assert f'/static/app.css?v={__version__}"' in html
     assert f'/static/app.js?v={__version__}"' in html
+
+
+def plugin_proxy_client(tmp_path, monkeypatch, manifest):
+    import base64
+    import importlib
+
+    from fastapi.responses import PlainTextResponse
+    from fastapi.testclient import TestClient
+
+    monkeypatch.setenv("WORKDIR", str(tmp_path))
+    monkeypatch.setenv("NH_USER", "admin")
+    monkeypatch.setenv("NH_PASSWORD", "test-password")
+    main = importlib.import_module("notifyhub.main")
+    monkeypatch.setattr(main, "store", Store(tmp_path))
+    monkeypatch.setattr(main.plugin_supervisor, "manifest_for", lambda plugin_id: manifest)
+
+    async def proxy(plugin_id, path, request):
+        return PlainTextResponse(f"{plugin_id}:{path}")
+
+    monkeypatch.setattr(main.plugin_supervisor, "proxy", proxy)
+    basic = "Basic " + base64.b64encode(b"admin:test-password").decode()
+    return TestClient(main.app), basic
+
+
+def test_plugin_proxy_requires_login_except_wecom_callback(tmp_path, monkeypatch):
+    client, basic = plugin_proxy_client(tmp_path, monkeypatch, {"id": "reminder"})
+    assert client.get("/api/plugins/reminder/reminder").status_code == 401
+    assert client.delete("/api/plugins/reminder/reminder/1").status_code == 401
+    assert client.post("/api/plugins/reminder/chat").text == "reminder:chat"
+    assert client.get("/api/plugins/reminder/reminder", headers={"Authorization": basic}).status_code == 200
+    page = client.get("/api/plugins/reminder/frontend/index.html", headers={"Accept": "text/html"}, follow_redirects=False)
+    assert page.status_code == 303 and page.headers["location"] == "/#plugins"
+
+
+def test_plugin_proxy_accepts_console_session(tmp_path, monkeypatch):
+    client, _ = plugin_proxy_client(tmp_path, monkeypatch, {"id": "reminder"})
+    assert client.post("/api/admin/login", json={"username": "admin", "password": "test-password"}).status_code == 200
+    assert client.get("/api/plugins/reminder/reminder").status_code == 200
+
+
+def test_plugin_manifest_public_paths_override_default(tmp_path, monkeypatch):
+    client, _ = plugin_proxy_client(tmp_path, monkeypatch, {"id": "flow", "public_paths": ["chat", "shortcut", "hooks/*"]})
+    assert client.get("/api/plugins/flow/shortcut?url=x").status_code == 200
+    assert client.post("/api/plugins/flow/hooks/github").status_code == 200
+    assert client.get("/api/plugins/flow/settings").status_code == 401
+    client, _ = plugin_proxy_client(tmp_path, monkeypatch, {"id": "quiet", "public_paths": []})
+    assert client.post("/api/plugins/quiet/chat").status_code == 401

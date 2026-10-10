@@ -224,6 +224,10 @@ class PluginSupervisor:
         for plugin_id in list(self.processes):
             self.stop(plugin_id)
 
+    def manifest_for(self, plugin_id):
+        item = self.processes.get(plugin_id)
+        return item.manifest if item else None
+
     def status(self, plugin_id):
         item = self.processes.get(plugin_id)
         if not item:

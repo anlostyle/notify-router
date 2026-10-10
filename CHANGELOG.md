@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.6.21 - 2026-10-10
+
+- 插件接口 `/api/plugins/<插件>/...` 默认需要管理后台登录（会话 Cookie 或 HTTP Basic）。插件可以在 manifest 的 `public_paths` 里声明公开地址；未声明时只有企业微信回调 `chat` 公开。未登录的浏览器打开插件页面会跳回管理后台。
+- FlowLink 插件 0.4.1 声明 `chat` 和 `shortcut` 为公开地址，iOS 快捷指令入口不受影响。
+
 ## 0.6.20 - 2026-10-10
 
 可靠性：

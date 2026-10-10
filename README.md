@@ -139,8 +139,19 @@ Since 0.5.0, every third-party plugin runs in an isolated worker process. Store
 changes hot-switch only the affected plugin, keep the router online, and roll
 back automatically if the candidate fails its startup check. Plugin dependencies
 live under `/data/plugin-runtime/<plugin-id>` and mutable state lives under
-`/data/plugin-data/<plugin-id>`. Manual installation remains
-available:
+`/data/plugin-data/<plugin-id>`.
+
+Since 0.6.21, plugin HTTP routes under `/api/plugins/<plugin-id>/` require a
+management-console login (session cookie or HTTP Basic). A plugin opts paths
+out of that check by listing them in its manifest, for example
+`"public_paths": ["chat", "shortcut", "hooks/*"]` (shell-style patterns,
+relative to the plugin root). Without the field only `chat`, the Enterprise
+WeChat callback that verifies its own signature, is public. Plugin pages opened
+from the console keep working because they carry the console session. Plugin
+workers do not receive `NH_PASSWORD`, `SESSION_SECRET`, `NOTIFY_API_TOKEN` or
+the console session cookie.
+
+Manual installation remains available:
 
 ```bash
 mkdir -p data/plugins
