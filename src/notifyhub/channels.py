@@ -1,4 +1,6 @@
+import html
 import json
+import re
 import smtplib
 import ssl
 import threading
@@ -134,14 +136,33 @@ def send_bark(config, item):
         client.get(url, params={k: v for k, v in params.items() if v}).raise_for_status()
 
 
+_TELEGRAM_TAG = re.compile(
+    r"</?(?:b|strong|i|em|u|ins|s|strike|del|code|pre|tg-spoiler|blockquote)>"
+    r"|<a\s+href=\"[^\"<>]*\">|</a>|<span\s+class=\"tg-spoiler\">|</span>",
+    re.IGNORECASE,
+)
+
+
+def telegram_html(value):
+    """Escape text for parse_mode=HTML while keeping the tags Telegram supports."""
+    text = str(value)
+    output, last = [], 0
+    for match in _TELEGRAM_TAG.finditer(text):
+        output.append(html.escape(text[last:match.start()], quote=False))
+        output.append(match.group(0))
+        last = match.end()
+    output.append(html.escape(text[last:], quote=False))
+    return "".join(output)
+
+
 def send_telegram(config, item):
     token = str(_pick(config, "bot_token", "token"))
     chat_id = str(_pick(config, "chat_id", "chatid"))
     if not token or not chat_id:
         raise ValueError("telegram bot_token/chat_id missing")
-    text = f"<b>{item['title']}</b>\n{item['content']}"
+    text = f"<b>{telegram_html(item['title'])}</b>\n{telegram_html(item['content'])}"
     if item.get("push_link_url"):
-        text += f"\n<a href=\"{item['push_link_url']}\">打开链接</a>"
+        text += f"\n<a href=\"{html.escape(item['push_link_url'], quote=True)}\">打开链接</a>"
     method = "sendPhoto" if item.get("push_img_url") else "sendMessage"
     payload = {"chat_id": chat_id, "parse_mode": "HTML"}
     payload["caption" if method == "sendPhoto" else "text"] = text

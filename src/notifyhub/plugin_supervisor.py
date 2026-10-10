@@ -20,6 +20,14 @@ from .store import enabled, redact_secret_text
 
 logger = logging.getLogger(__name__)
 
+PRIVATE_ENV = {"NH_PASSWORD", "NH_USER", "SESSION_SECRET", "NOTIFY_API_TOKEN"}
+SESSION_COOKIE = "notify_session"
+
+
+def _strip_session_cookie(header):
+    parts = [part.strip() for part in header.split(";") if part.strip()]
+    return "; ".join(part for part in parts if part.split("=", 1)[0].strip() != SESSION_COOKIE)
+
 
 def _friendly_worker_log(text):
     """Translate stable Uvicorn lifecycle lines while preserving diagnostics."""
@@ -102,7 +110,12 @@ class PluginSupervisor:
             manifest_path = directory / "manifest.json"
             if not directory.is_dir() or directory.name.startswith(".") or not manifest_path.is_file():
                 continue
-            manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+            try:
+                manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+            except Exception as exc:
+                logger.error("plugin manifest unreadable, skipped: %s (%s)", directory.name, exc)
+                self._append_log(directory.name, "ERROR", f"manifest.json 无法解析，已跳过: {exc}")
+                continue
             if self._enabled(str(manifest.get("id") or directory.name)):
                 try:
                     self.reload(directory.name)
@@ -115,7 +128,8 @@ class PluginSupervisor:
         self.plugin_keys[str(manifest.get("id") or plugin_id)] = plugin_id
         safe = re.sub(r"[^A-Za-z0-9_.-]", "_", plugin_id)
         socket = self.socket_dir / f"{safe[:24]}-{str(time.time_ns())[-10:]}.sock"
-        env = os.environ.copy()
+        # Plugins run third-party code: never hand them the console or API credentials.
+        env = {key: value for key, value in os.environ.items() if key not in PRIVATE_ENV}
         package_root = str(Path(__file__).resolve().parent.parent)
         env["PYTHONPATH"] = os.pathsep.join(value for value in (package_root, env.get("PYTHONPATH")) if value)
         process = subprocess.Popen(
@@ -229,7 +243,10 @@ class PluginSupervisor:
         if not item or item.process.poll() is not None:
             raise HTTPException(503, "plugin worker unavailable")
         transport = httpx.AsyncHTTPTransport(uds=str(item.socket))
-        headers = {key: value for key, value in request.headers.items() if key.lower() not in {"host", "content-length", "connection"}}
+        headers = {key: value for key, value in request.headers.items() if key.lower() not in {"host", "content-length", "connection", "cookie"}}
+        cookie = _strip_session_cookie(request.headers.get("cookie", ""))
+        if cookie:
+            headers["cookie"] = cookie
         async with httpx.AsyncClient(transport=transport, base_url="http://plugin", timeout=60) as client:
             response = await client.request(request.method, f"/api/plugins/{plugin_id}/{path}", params=request.query_params, content=await request.body(), headers=headers)
         output_headers = {key: value for key, value in response.headers.items() if key.lower() not in {"content-length", "connection", "transfer-encoding"}}

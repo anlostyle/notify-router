@@ -44,6 +44,7 @@
     <symbol id="i-logout" viewBox="0 0 24 24"><path d="M10 4H4v16h6M14 8l4 4-4 4M8 12h10"/></symbol>
     <symbol id="i-palette" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><circle cx="9" cy="9" r="1"/><circle cx="15" cy="8" r="1"/><circle cx="16" cy="14" r="1"/><path d="M8 16h2a2 2 0 0 1 2 2v2"/></symbol>
     <symbol id="i-download" viewBox="0 0 24 24"><path d="M12 3v12m0 0 4-4m-4 4-4-4M4 21h16"/></symbol>
+    <symbol id="i-filter" viewBox="0 0 24 24"><path d="M3 5h18l-7 8v6l-4 2v-8z"/></symbol>
     <symbol id="i-upload" viewBox="0 0 24 24"><path d="M12 15V3m0 0 4 4m-4-4L8 7M4 21h16"/></symbol>
   </svg>
 
@@ -80,7 +81,7 @@
         <a href="#dashboard" data-page="dashboard"><svg><use href="#i-grid"/></svg><span>看板</span></a>
         <p class="nav-label">通知管理</p>
         <a href="#channels" data-page="channels"><svg><use href="#i-bell"/></svg><span>通知渠道</span><b id="nav-channels">0</b></a>
-        <a href="#routes" data-page="routes"><svg><use href="#i-route"/></svg><span>通知通道</span><b id="nav-routes">0</b></a>
+        <a href="#routes" data-page="routes"><svg><use href="#i-route"/></svg><span>通知路由</span><b id="nav-routes">0</b></a>
         <a href="#templates" data-page="templates"><svg><use href="#i-file"/></svg><span>通知模板</span></a>
         <p class="nav-label">服务中心</p>
         <a href="#monitors" data-page="monitors"><svg><use href="#i-monitor"/></svg><span>监控中心</span><b id="nav-monitors">0</b></a>
@@ -92,7 +93,7 @@
         <a href="#logs" data-page="logs"><svg><use href="#i-terminal"/></svg><span>系统日志</span></a>
         <a href="#settings" data-page="settings"><svg><use href="#i-settings"/></svg><span>系统设置</span></a>
       </nav>
-      <div class="sidebar-status"><span class="status-dot"></span><div><strong>服务运行正常</strong><small id="sidebar-version">Notify</small></div></div>
+      <div class="sidebar-status" id="sidebar-status"><span class="status-dot"></span><div><strong id="sidebar-status-text">服务运行正常</strong><small id="sidebar-version">Notify</small></div></div>
     </aside>
 
     <main class="main">
@@ -100,7 +101,7 @@
         <button id="menu-button" class="icon-button menu-button" data-action="open-menu" aria-label="收起侧栏" aria-expanded="true"><svg><use id="menu-icon" href="#i-sidebar-collapse"/></svg></button>
         <div class="search"><svg><use href="#i-search"/></svg><input id="global-search" type="search" placeholder="搜索当前页面" aria-label="搜索当前页面"><kbd>⌘ K</kbd></div>
         <div class="topbar-actions">
-          <span class="service-pill"><i></i><span>服务正常</span></span>
+          <span class="service-pill" id="service-pill"><i></i><span id="service-pill-text">服务正常</span></span>
           <button class="icon-button" data-action="toggle-palette" aria-label="切换配色" title="切换配色"><svg><use href="#i-palette"/></svg></button>
           <button class="icon-button theme-button" data-action="toggle-theme" aria-label="切换主题" title="切换主题"><svg><use id="theme-icon" href="#i-moon"/></svg></button>
           <button class="icon-button" data-action="restart-service" aria-label="重启服务" title="重启服务"><svg><use href="#i-refresh"/></svg></button>

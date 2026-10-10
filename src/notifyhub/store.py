@@ -93,6 +93,7 @@ class Store:
         self.appearance_path = self.conf_dir / "appearance.json"
         self.db_path = self.db_dir / "main.db"
         self._config_lock = threading.Lock()
+        self.on_enqueue = None
         self._appearance_lock = threading.RLock()
         self._prepare_files()
         self._prepare_db()
@@ -649,6 +650,8 @@ class Store:
                    VALUES (?, ?, 'pending', 0, ?, ?, ?)""",
                 [(outbox_id, name, time.time(), now, now) for name in channel_names],
             )
+        if self.on_enqueue:
+            self.on_enqueue()
         return outbox_id
 
     def claim_delivery(self):
@@ -794,7 +797,7 @@ class Store:
             "total": success + failed,
             "success": success,
             "failed": failed,
-            "success_rate": round(success * 100 / (success + failed), 1) if success + failed else 100.0,
+            "success_rate": round(success * 100 / (success + failed), 1) if success + failed else None,
             "today": {"success": int(today[0]), "failed": int(today[1])},
             "queue": queue,
             "trend": trend,
@@ -826,10 +829,13 @@ class Store:
     def retry_failed(self, delivery_id):
         with self.connect() as db:
             result = db.execute(
-                "UPDATE deliveries SET status='retry', next_attempt_at=?, updated_at=? WHERE id=? AND status='failed'",
+                # A manual retry starts a fresh retry cycle instead of a single last attempt.
+                "UPDATE deliveries SET status='retry', attempts=0, next_attempt_at=?, updated_at=? WHERE id=? AND status='failed'",
                 (time.time(), localnow(), delivery_id),
             )
-            return result.rowcount == 1
+        if result.rowcount == 1 and self.on_enqueue:
+            self.on_enqueue()
+        return result.rowcount == 1
 
     def record_event(self, domain, source, event_type, entity_key, severity, title, summary, status="open"):
         now = localnow()

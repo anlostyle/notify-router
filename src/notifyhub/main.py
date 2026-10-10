@@ -64,6 +64,7 @@ os.environ.setdefault("WORKDIR", str(DATA_DIR))
 store = Store(DATA_DIR)
 Server.configure(store)
 worker = DeliveryWorker(store)
+store.on_enqueue = worker.wake
 plugin_store = PluginStore(store)
 plugin_supervisor = PluginSupervisor(store)
 security = HTTPBasic(auto_error=False)
@@ -389,7 +390,10 @@ def enqueue_event(route_id, event, template_type, context, message, push_img_url
 
 @app.get("/healthz")
 def healthz():
-    return {"status": "ok", "version": __version__}
+    state = worker.health()
+    if not state["healthy"]:
+        return JSONResponse({"status": "degraded", "version": __version__, "worker": state}, status_code=503)
+    return {"status": "ok", "version": __version__, "worker": state}
 
 
 @app.get("/api/appearance", include_in_schema=False)
@@ -948,9 +952,17 @@ STATIC_DIR = Path(__file__).with_name("static")
 app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
 
 
+def _index_html():
+    # Version the asset URLs so browsers fetch the new UI right after an upgrade.
+    html = (STATIC_DIR / "index.html").read_text(encoding="utf-8")
+    for asset in ("/static/app.css", "/static/app.js"):
+        html = html.replace(f'"{asset}"', f'"{asset}?v={quote(__version__)}"')
+    return html
+
+
 @app.get("/")
 def index():
-    return FileResponse(STATIC_DIR / "index.html", headers={"Cache-Control": "no-store"})
+    return Response(_index_html(), media_type="text/html; charset=utf-8", headers={"Cache-Control": "no-store"})
 
 
 def _all_plugin_manifests():

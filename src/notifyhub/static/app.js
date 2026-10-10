@@ -3,7 +3,7 @@ const $$ = (selector, root = document) => [...root.querySelectorAll(selector)]
 const PAGES = {
   dashboard: ['运行概览', '系统看板', '查看通知服务的运行状态与近期投递表现'],
   channels: ['通知管理', '通知渠道', '管理企业微信、Telegram、Webhook 等消息出口'],
-  routes: ['通知管理', '通知通道', '将推送入口、通知模板与发送渠道连接起来'],
+  routes: ['通知管理', '通知路由', '为每个推送来源分配入口 ID，并把消息分发到一个或多个渠道'],
   templates: ['通知管理', '通知模板', '统一管理不同服务的消息格式并实时预览'],
   monitors: ['服务中心', '监控中心', '集中查看服务、主机、容器与备份的当前状态和事件'],
   tasks: ['服务中心', '任务中心', '查看定时任务、系统任务及每次执行结果'],
@@ -108,6 +108,9 @@ const state = {
   query: '',
   deliveryStatus: '',
   deliveryFilters: { route_id: '', channel_name: '', error: '', date_from: '', date_to: '' },
+  deliveryFiltersOpen: null,
+  health: null,
+  healthTimer: null,
   lastPage: '',
   modalSubmit: null,
   modalReturnFocus: null,
@@ -313,12 +316,27 @@ async function showApp(session) {
   $('#app').hidden = false
   $('#username').textContent = session.username || 'admin'
   $('#user-avatar').textContent = (session.username || 'A').slice(0, 1).toUpperCase()
-  await loadCore()
-  await renderPage()
+  try {
+    await loadCore()
+    await renderPage()
+  } catch (error) {
+    $('#page-content').innerHTML = errorState(error.message)
+    setServiceState(false, '数据加载失败')
+  }
   document.body.classList.remove('auth-pending')
-  if (session.password_change_required || state.status.password_change_required) {
+  clearInterval(state.healthTimer)
+  state.healthTimer = setInterval(refreshHealth, 60000)
+  if ((session.password_change_required || state.status?.password_change_required) && !sessionFlag('notify-password-prompted')) {
     setTimeout(() => openPasswordForm(true), 120)
   }
+}
+
+function sessionFlag(key) {
+  try {
+    if (sessionStorage.getItem(key)) return true
+    sessionStorage.setItem(key, '1')
+  } catch { /* storage may be unavailable; prompting again is harmless */ }
+  return false
 }
 
 async function loadCore() {
@@ -341,20 +359,21 @@ async function loadCore() {
   $('#nav-monitors').textContent = state.monitors.summary?.total || 0
   $('#nav-tasks').textContent = state.tasks.summary?.total || 0
   $('#sidebar-version').textContent = `v${status.version}`
+  refreshHealth()
 }
 
 function setPageActions(page) {
   const actions = {
     dashboard: `<button class="button secondary" data-action="refresh" aria-label="刷新">${icon('refresh')}<span>刷新</span></button>`,
     channels: `<button class="button primary" data-action="add-channel" aria-label="新增渠道">${icon('plus')}<span>新增渠道</span></button>`,
-    routes: `<button class="button primary" data-action="add-route" aria-label="新增通道">${icon('plus')}<span>新增通道</span></button>`,
+    routes: `<button class="button primary" data-action="add-route" aria-label="新增路由">${icon('plus')}<span>新增路由</span></button>`,
     templates: `<button class="button primary" data-action="add-template" aria-label="新增模板">${icon('plus')}<span>新增模板</span></button>`,
     monitors: `<button class="button secondary" data-action="refresh" aria-label="刷新">${icon('refresh')}<span>刷新</span></button>`,
     tasks: `<button class="button secondary" data-action="refresh" aria-label="刷新">${icon('refresh')}<span>刷新</span></button>`,
     deliveries: `<button class="button secondary" data-action="refresh" aria-label="刷新">${icon('refresh')}<span>刷新</span></button>`,
     logs: `<button class="button secondary" data-action="refresh" aria-label="刷新">${icon('refresh')}<span>刷新</span></button>`,
     plugins: `<button class="button secondary" data-action="manage-plugin-sources" aria-label="管理插件源">${icon('settings')}<span>插件源</span></button>`,
-    settings: `<button class="button secondary" data-action="export-config" aria-label="导出配置">${icon('download')}<span>导出</span></button><button class="button secondary" data-action="import-config" aria-label="导入配置">${icon('upload')}<span>导入</span></button><button class="button primary" data-action="edit-settings" aria-label="编辑设置">${icon('edit')}<span>编辑设置</span></button>`,
+    settings: `<button class="button secondary" data-action="export-config" aria-label="导出配置">${icon('download')}<span>导出</span></button><button class="button secondary" data-action="import-config" aria-label="导入配置">${icon('upload')}<span>导入</span></button>`,
   }
   $('#page-actions').innerHTML = actions[page] || ''
 }
@@ -374,7 +393,7 @@ async function renderPage() {
   $('#page-eyebrow').textContent = eyebrow
   $('#page-title').textContent = title
   $('#page-description').textContent = description
-  $('#global-search').placeholder = `搜索${title}`
+  $('#global-search').placeholder = isMobileLayout() ? '搜索' : `搜索${title}`
   $('#global-search').setAttribute('aria-label', `搜索${title}`)
   setPageActions(page)
   $$('#nav a').forEach(link => {
@@ -417,7 +436,10 @@ async function renderPage() {
       state.tasks = await api('/api/admin/tasks')
       $('#nav-tasks').textContent = state.tasks.summary?.total || 0
     }
+    if (!state.status || !state.config) await loadCore()
     renderCurrent()
+  } catch (error) {
+    $('#page-content').innerHTML = errorState(error.message)
   } finally {
     $('#page-content').removeAttribute('aria-busy')
   }
@@ -463,46 +485,117 @@ function renderDashboard() {
   const queue = stats.queue || {}
   const trend = stats.trend || []
   const deliveries = state.status.deliveries || []
+  const waiting = (queue.pending || 0) + (queue.retry || 0) + (queue.processing || 0)
   const maxValue = Math.max(1, ...trend.map(row => Number(row.success || 0) + Number(row.failed || 0)))
   const chart = trend.length ? `<div class="chart">${trend.map(row => {
-    const success = Math.max(2, Number(row.success || 0) / maxValue * 100)
+    const success = Number(row.success || 0) ? Math.max(2, Number(row.success) / maxValue * 100) : 0
     const failed = Number(row.failed || 0) ? Math.max(3, Number(row.failed) / maxValue * 100) : 0
-    return `<div class="bar-group" title="${escapeHtml(row.date)} · 成功 ${row.success} · 失败 ${row.failed}"><i class="bar" style="height:${success}%"></i>${failed ? `<i class="bar failed" style="height:${failed}%"></i>` : ''}<span class="bar-label">${escapeHtml(String(row.date).slice(5))}</span></div>`
-  }).join('')}</div>` : '<div class="chart-empty">暂无趋势数据</div>'
+    return `<div class="bar-group" title="${escapeHtml(row.date)} · 成功 ${row.success} · 失败 ${row.failed}">${success ? `<i class="bar" style="height:${success}%"></i>` : ''}${failed ? `<i class="bar failed" style="height:${failed}%"></i>` : ''}<span class="bar-label">${escapeHtml(String(row.date).slice(5))}</span></div>`
+  }).join('')}</div>` : `<div class="chart-empty">${icon('send')}<div><strong>还没有投递数据</strong><p>发送一条测试通知，趋势会从今天开始记录</p></div><a class="button secondary small" href="#channels">去测试渠道</a></div>`
   const activity = deliveries.slice(0, 7).map(item => `
-    <div class="activity-item">
+    <button class="activity-item" type="button" data-action="dashboard-delivery" data-id="${escapeHtml(item.id)}">
       <span class="activity-icon ${escapeHtml(item.status)}">${icon(item.status === 'sent' ? 'check' : item.status === 'failed' ? 'alert' : 'refresh')}</span>
-      <div class="activity-main"><strong>${escapeHtml(item.title || '无标题通知')}</strong><small>${escapeHtml(item.route_name)} → ${escapeHtml(item.channel_name)}</small></div>
-      <span class="activity-time">${escapeHtml(formatDate(item.updated_at || item.outbox_created_at))}</span>
-    </div>`).join('') || '<div class="empty-state"><p>还没有投递记录</p></div>'
+      <span class="activity-main"><strong>${escapeHtml(item.title || '无标题通知')}</strong><small>${escapeHtml(item.route_name)} → ${escapeHtml(item.channel_name)}</small></span>
+      <span class="activity-time">${escapeHtml(relativeTime(item.updated_at || item.outbox_created_at))}</span>
+    </button>`).join('') || '<div class="panel-empty">还没有投递记录</div>'
+  const channelStates = new Map((stats.channel_states || []).map(item => [item.channel_name, item]))
+  const channels = (state.config.channels || []).map(channel => {
+    const latest = channelStates.get(channel.name)
+    const disabled = channel.enabled === false
+    const status = disabled ? 'inactive' : latest?.status || 'idle'
+    const label = disabled ? '已停用' : latest ? statusText(latest.status) : '暂无投递'
+    return `<a class="health-item" href="#channels" title="${escapeHtml(latest?.last_error || '')}"><span class="health-dot ${escapeHtml(status)}"></span><span class="health-name">${escapeHtml(channel.name)}</span><span class="health-meta">${escapeHtml(label)}${latest ? ` · ${escapeHtml(relativeTime(latest.updated_at))}` : ''}</span></a>`
+  }).join('')
+  const rate = stats.success_rate
+  const notice = state.status.password_change_required ? `<div class="notice warn">${icon('alert')}<div><strong>仍在使用默认管理员密码</strong><p>请尽快修改，避免他人进入管理后台。</p></div><button class="button secondary small" data-action="change-password">立即修改</button></div>` : ''
   return `
+    ${notice}
     <div class="stats-grid">
-      ${statCard('累计投递', stats.total || 0, '历史成功与失败总数', 'send', 'purple')}
-      ${statCard('成功率', `${stats.success_rate ?? 100}%`, `${stats.success || 0} 条已成功送达`, 'check', 'green')}
-      ${statCard('今日消息', (stats.today?.success || 0) + (stats.today?.failed || 0), `失败 ${stats.today?.failed || 0} 条`, 'bell', 'blue')}
-      ${statCard('等待处理', (queue.pending || 0) + (queue.retry || 0) + (queue.processing || 0), `重试 ${queue.retry || 0} · 发送中 ${queue.processing || 0}`, 'refresh', 'orange')}
+      ${statCard('累计投递', formatNumber(stats.total || 0), `成功 ${formatNumber(stats.success || 0)} · 失败 ${formatNumber(stats.failed || 0)}`, 'send', 'purple', sparkline(trend.map(row => Number(row.success || 0) + Number(row.failed || 0))))}
+      ${statCard('成功率', rate == null ? '—' : `${rate}%`, rate == null ? '暂无投递记录' : '按全部历史投递计算', 'check', 'green')}
+      ${statCard('今日消息', formatNumber((stats.today?.success || 0) + (stats.today?.failed || 0)), stats.today?.failed ? `失败 ${stats.today.failed} 条` : '今日暂无失败', 'bell', 'blue')}
+      ${statCard('等待处理', formatNumber(waiting), waiting ? `重试 ${queue.retry || 0} · 发送中 ${queue.processing || 0}` : '队列已清空', 'refresh', waiting ? 'orange' : 'muted')}
     </div>
     <div class="dashboard-grid">
-      <section class="panel"><header class="panel-header"><div><h2>投递趋势</h2><p>最近 ${trend.length || 0} 个有记录的日期</p></div><span class="tag purple">成功 / 失败</span></header><div class="panel-body">${chart}</div></section>
-      <section class="panel"><header class="panel-header"><div><h2>最近活动</h2><p>最新的发送状态</p></div><a href="#deliveries" class="tag">查看全部</a></header><div class="panel-body activity-list">${activity}</div></section>
-    </div>`
+      <section class="panel"><header class="panel-header"><div><h2>投递趋势</h2><p>${trend.length ? `最近 ${trend.length} 个有记录的日期` : '按日统计成功与失败'}</p></div><div class="chart-legend"><span><i></i>成功</span><span class="failed"><i></i>失败</span></div></header><div class="panel-body">${chart}</div></section>
+      <section class="panel"><header class="panel-header"><div><h2>最近活动</h2><p>点击查看投递详情</p></div><a href="#deliveries" class="text-link">全部 ${icon('chevron')}</a></header><div class="panel-body activity-list">${activity}</div></section>
+    </div>
+    ${channels ? `<section class="panel channel-health"><header class="panel-header"><div><h2>渠道状态</h2><p>每个渠道最近一次投递结果</p></div></header><div class="panel-body health-grid">${channels}</div></section>` : ''}`
 }
 
-function statCard(label, value, foot, iconName, accent) {
-  return `<article class="stat-card accent-${accent}"><div class="stat-top"><span>${label}</span><span class="stat-icon">${icon(iconName)}</span></div><div class="stat-value">${escapeHtml(value)}</div><div class="stat-foot">${escapeHtml(foot)}</div></article>`
+function statCard(label, value, foot, iconName, accent, extra = '') {
+  return `<article class="stat-card accent-${accent}"><div class="stat-top"><span>${label}</span><span class="stat-icon">${icon(iconName)}</span></div><div class="stat-value">${escapeHtml(value)}</div><div class="stat-foot">${escapeHtml(foot)}</div>${extra}</article>`
+}
+
+function sparkline(values) {
+  if (values.length < 2) return ''
+  const max = Math.max(1, ...values)
+  const step = 100 / (values.length - 1)
+  const points = values.map((value, index) => `${(index * step).toFixed(1)},${(30 - value / max * 26 - 2).toFixed(1)}`).join(' ')
+  return `<svg class="sparkline" viewBox="0 0 100 30" preserveAspectRatio="none" aria-hidden="true"><polyline points="${points}"/></svg>`
+}
+
+function formatNumber(value) {
+  return Number(value || 0).toLocaleString('zh-CN')
+}
+
+function relativeTime(value) {
+  if (!value) return '—'
+  const date = new Date(String(value).replace(' ', 'T'))
+  if (Number.isNaN(date.getTime())) return String(value)
+  const seconds = Math.round((Date.now() - date.getTime()) / 1000)
+  if (seconds < 45) return '刚刚'
+  if (seconds < 3600) return `${Math.round(seconds / 60)} 分钟前`
+  if (seconds < 86400) return `${Math.round(seconds / 3600)} 小时前`
+  if (seconds < 86400 * 7) return `${Math.round(seconds / 86400)} 天前`
+  return date.toLocaleDateString('zh-CN')
+}
+
+const CHANNEL_COLORS = { qywx: '#1f87e8', bark: '#ef4f3d', telegram: '#2aa3dc', discord: '#5865f2', dingtalk: '#1677ff', pushdeer: '#e8960c', feishu: '#3370ff', serverchan3: '#16a34a', email: '#ea7a17', webhook: '#8b5cf6' }
+
+function urlHost(value) {
+  if (!value) return ''
+  try { return new URL(String(value)).host } catch { return '已配置' }
+}
+
+function channelSummary(channel) {
+  const config = channel.config || {}
+  const configured = value => value ? '已配置' : '未配置'
+  switch (channel.type) {
+    case 'qywx': return [['接口', config.server_url ? urlHost(config.server_url) : '官方接口'], ['接收', config.touser || '@all'], ['格式', config.is_news === false ? '文本消息' : '图文优先']]
+    case 'bark': return [['服务器', urlHost(config.push_url) || '未配置']]
+    case 'telegram': return [['Chat ID', config.chat_id || '未配置']]
+    case 'discord': return [['Webhook', configured(config.webhook_url)]]
+    case 'dingtalk': return [['机器人', configured(config.access_token || config.webhook_url)]]
+    case 'pushdeer': return [['服务器', urlHost(config.server_url) || '官方服务']]
+    case 'feishu': return [['接收', config.receive_id ? `${config.receive_id_type || 'open_id'} · ${config.receive_id}` : '未配置']]
+    case 'serverchan3': return [['SendKey', configured(config.send_key)]]
+    case 'email': return [['发件', config.from_email || config.username || '未配置'], ['收件', config.to_email || '未配置']]
+    case 'webhook': return [['地址', urlHost(config.url || config.webhook_url) || '未配置']]
+    default: return Object.keys(config).length ? [['配置', `${Object.keys(config).length} 项`]] : []
+  }
 }
 
 function renderChannels() {
   const latest = new Map((state.status.stats?.channel_states || []).map(item => [item.channel_name, item]))
-  const channels = (state.config.channels || []).filter(item => matches(item.name, item.type, item.config?.server_url, item.config?.touser))
+  const channels = (state.config.channels || []).filter(item => matches(item.name, item.type, typeInfo(item.type).label, item.config?.server_url, item.config?.touser))
   if (!channels.length) return emptyState('bell', state.query ? '没有匹配的通知渠道' : '还没有通知渠道', state.query ? '请尝试其他关键词' : '创建第一个渠道开始发送消息')
+  const usage = new Map()
+  for (const route of state.config.routes || []) for (const name of route.channel_name || []) usage.set(name, (usage.get(name) || 0) + 1)
   return `<div class="entity-grid">${channels.map(channel => {
     const type = typeInfo(channel.type)
     const status = latest.get(channel.name)
-    const endpoint = channel.config?.server_url || channel.config?.push_url || channel.config?.url || '使用官方服务地址'
-    return `<article class="entity-card">
-      <div class="entity-head"><span class="entity-icon">${escapeHtml(type.short)}</span><div class="entity-title"><h3>${escapeHtml(channel.name)}</h3><p>${escapeHtml(type.label)}</p></div><span class="status-badge ${escapeHtml(status?.status || 'active')}">${escapeHtml(status ? statusText(status.status) : '已配置')}</span></div>
-      <div class="entity-body"><div class="entity-meta"><span class="tag">API</span><span title="${escapeHtml(endpoint)}">${escapeHtml(endpoint)}</span></div><div class="entity-meta"><span class="tag purple">${channel.config?.is_news ? 'News' : 'Text'}</span><span>${escapeHtml(channel.config?.touser || '默认接收目标')}</span></div></div>
+    const disabled = channel.enabled === false
+    const badge = disabled ? '<span class="status-badge inactive">已停用</span>' : status ? `<span class="status-badge ${escapeHtml(status.status)}">${escapeHtml(statusText(status.status))}</span>` : '<span class="status-badge idle">未使用</span>'
+    const rows = channelSummary(channel).map(([label, value]) => `<div class="kv-row"><dt>${escapeHtml(label)}</dt><dd title="${escapeHtml(value)}">${escapeHtml(value)}</dd></div>`).join('')
+    const routes = usage.get(channel.name) || 0
+    const foot = status?.status === 'failed' && status.last_error
+      ? `<p class="entity-foot error" title="${escapeHtml(status.last_error)}">${icon('alert')}<span>${escapeHtml(status.last_error)}</span></p>`
+      : `<p class="entity-foot">${status ? `最近投递 ${escapeHtml(relativeTime(status.updated_at))}` : '尚无投递记录'} · ${routes ? `${routes} 个路由使用` : '未被路由使用'}</p>`
+    return `<article class="entity-card channel-card ${disabled ? 'is-disabled' : ''}">
+      <div class="entity-head"><span class="entity-icon brand" style="--brand:${CHANNEL_COLORS[channel.type] || 'var(--primary)'}">${escapeHtml(type.short)}</span><div class="entity-title"><h3>${escapeHtml(channel.name)}</h3><p>${escapeHtml(type.label)}</p></div>${badge}</div>
+      <dl class="kv">${rows}</dl>
+      ${foot}
       <div class="entity-actions"><button class="button secondary small" data-action="test-channel" data-name="${escapeHtml(channel.name)}">${icon('send')}测试</button><span class="spacer"></span><div class="inline-actions"><button class="icon-button" data-action="edit-channel" data-name="${escapeHtml(channel.name)}" aria-label="编辑">${icon('edit')}</button><button class="icon-button danger" data-action="delete-channel" data-name="${escapeHtml(channel.name)}" aria-label="删除">${icon('trash')}</button></div></div>
     </article>`
   }).join('')}</div>`
@@ -510,9 +603,12 @@ function renderChannels() {
 
 function renderRoutes() {
   const routes = (state.config.routes || []).filter(item => matches(item.route_name, item.route_id, ...(item.channel_name || []), ...(item.bind_template || [])))
-  if (!routes.length) return emptyState('route', state.query ? '没有匹配的通知通道' : '还没有通知通道', state.query ? '请尝试其他关键词' : '创建通道连接推送来源与通知渠道')
-  return `<div class="table-wrap"><table class="data-table"><thead><tr><th>通道</th><th>发送渠道</th><th>绑定模板</th><th>状态</th><th>操作</th></tr></thead><tbody>${routes.map(route => `
-    <tr><td data-label="通道"><div class="cell-title"><strong>${escapeHtml(route.route_name)}</strong><small>${escapeHtml(route.route_id)}</small></div></td><td data-label="发送渠道">${(route.channel_name || []).map(name => `<span class="tag purple">${escapeHtml(name)}</span>`).join(' ') || '—'}</td><td data-label="绑定模板"><span class="truncate">${escapeHtml((route.bind_template || []).join('、') || '直接透传消息')}</span></td><td data-label="状态"><span class="status-badge ${route.active === false ? 'inactive' : 'active'}">${route.active === false ? '已停用' : '运行中'}</span></td><td data-label="操作"><div class="inline-actions"><button class="icon-button" data-action="copy-route" data-id="${escapeHtml(route.route_id)}" aria-label="复制接口">${icon('copy')}</button><button class="icon-button" data-action="edit-route" data-id="${escapeHtml(route.route_id)}" aria-label="编辑">${icon('edit')}</button><button class="icon-button danger" data-action="delete-route" data-id="${escapeHtml(route.route_id)}" aria-label="删除">${icon('trash')}</button></div></td></tr>`).join('')}</tbody></table></div>`
+  if (!routes.length) return emptyState('route', state.query ? '没有匹配的通知路由' : '还没有通知路由', state.query ? '请尝试其他关键词' : '创建路由，为推送来源分配入口并选择发送渠道')
+  return `<div class="table-wrap"><table class="data-table"><thead><tr><th>路由</th><th>发送渠道</th><th>绑定模板</th><th>状态</th><th>操作</th></tr></thead><tbody>${routes.map(route => {
+    const templates = route.bind_template || []
+    return `
+    <tr><td class="cell-primary" data-label="路由"><div class="cell-title"><strong>${escapeHtml(route.route_name)}</strong><small><code class="mono">${escapeHtml(route.route_id)}</code></small></div></td><td data-label="发送渠道"><div class="tag-list">${(route.channel_name || []).map(name => `<span class="tag purple">${escapeHtml(name)}</span>`).join('') || '—'}</div></td><td data-label="绑定模板"><span class="truncate" title="${escapeHtml(templates.join('、'))}">${templates.length ? `${templates.length} 个模板` : '直接透传'}</span></td><td data-label="状态"><span class="status-badge ${route.active === false ? 'inactive' : 'active'}">${route.active === false ? '已停用' : '运行中'}</span></td><td class="cell-actions" data-label="操作"><div class="inline-actions"><button class="icon-button" data-action="copy-route" data-id="${escapeHtml(route.route_id)}" aria-label="复制调用地址" title="复制调用地址">${icon('copy')}</button><button class="icon-button" data-action="edit-route" data-id="${escapeHtml(route.route_id)}" aria-label="编辑">${icon('edit')}</button><button class="icon-button danger" data-action="delete-route" data-id="${escapeHtml(route.route_id)}" aria-label="删除">${icon('trash')}</button></div></td></tr>`
+  }).join('')}</tbody></table></div>`
 }
 
 const TEMPLATE_PREVIEW_EXAMPLES = {
@@ -542,33 +638,59 @@ function renderTemplateExample(value, type) {
     .replace(/{%[^%]*%}/g, '')
 }
 
+function templateEventLabel(type) {
+  for (const group of TEMPLATE_EVENT_GROUPS) {
+    const found = group.values.find(([value]) => value === type)
+    if (found) return found[1]
+  }
+  const registered = (state.eventTypes || []).find(item => item.value === type)
+  if (registered?.label) return String(registered.label).replace(/^[^·:]+\s*[·:]\s*/, '')
+  return ''
+}
+
 function renderTemplates() {
-  const templates = state.templates.filter(item => matches(item.name, item.type, item.description, item.title, item.content))
+  const templates = state.templates.filter(item => matches(item.name, item.type, templateEventLabel(item.type), item.description, item.title, item.content))
   if (!templates.length) return emptyState('file', state.query ? '没有匹配的通知模板' : '还没有通知模板', state.query ? '请尝试其他关键词' : '创建模板统一管理消息格式')
-  return `<div class="entity-grid">${templates.map(template => `
-    <article class="entity-card"><div class="entity-head"><span class="entity-icon">${icon('file')}</span><div class="entity-title"><h3>${escapeHtml(template.name)}</h3><p>${escapeHtml(template.type || '通用模板')}</p></div></div><div class="entity-body"><strong class="truncate">${escapeHtml(renderTemplateExample(template.title, template.type) || '无标题')}</strong><p class="truncate">${escapeHtml(renderTemplateExample(template.content, template.type) || template.description || '暂无说明')}</p></div><div class="entity-actions"><span class="tag purple">Jinja</span><span class="spacer"></span><div class="inline-actions"><button class="icon-button" data-action="edit-template" data-name="${escapeHtml(template.name)}" aria-label="编辑">${icon('edit')}</button><button class="icon-button danger" data-action="delete-template" data-name="${escapeHtml(template.name)}" aria-label="删除">${icon('trash')}</button></div></div></article>`).join('')}</div>`
+  const groups = new Map()
+  for (const template of templates) {
+    const type = String(template.type || '')
+    const group = type && type !== DEFAULT_TEMPLATE_TYPE && type.includes('.') ? type.split('.', 1)[0] : '通用'
+    if (!groups.has(group)) groups.set(group, [])
+    groups.get(group).push(template)
+  }
+  const card = template => {
+    const label = templateEventLabel(template.type)
+    const identifier = /^[\w.-]+$/.test(template.name || '')
+    const title = identifier && label ? label : template.name
+    const subtitle = identifier && label ? template.name : (label || template.type || '通用模板')
+    const previewTitle = renderTemplateExample(template.title, template.type) || '无标题'
+    const previewContent = renderTemplateExample(template.content, template.type) || template.description || '暂无内容'
+    return `<article class="entity-card template-card"><div class="entity-head"><div class="entity-title"><h3>${escapeHtml(title)}</h3><p class="${identifier ? 'mono' : ''}">${escapeHtml(subtitle)}</p></div><div class="inline-actions"><button class="icon-button" data-action="edit-template" data-name="${escapeHtml(template.name)}" aria-label="编辑">${icon('edit')}</button><button class="icon-button danger" data-action="delete-template" data-name="${escapeHtml(template.name)}" aria-label="删除">${icon('trash')}</button></div></div><div class="message-preview"><strong>${escapeHtml(previewTitle)}</strong><p>${escapeHtml(previewContent)}</p></div></article>`
+  }
+  return [...groups].map(([group, items]) => `<section class="entity-group"><h2 class="group-title">${escapeHtml(group)}<span>${items.length}</span></h2><div class="entity-grid">${items.map(card).join('')}</div></section>`).join('')
 }
 
 function renderPlugins() {
   const plugins = state.plugins.filter(item => matches(item.name, item.id, item.description, item.version))
   const catalog = (state.pluginStore.plugins || []).filter(item => matches(item.name, item.id, item.description, item.version, item.author))
   const sources = state.pluginStore.sources || []
-  const sourceSummary = sources.length
-    ? sources.map(source => `<span class="tag ${source.status === 'error' ? 'danger' : ''}" title="${escapeHtml(source.error || source.url)}">${escapeHtml(source.name)} · ${source.status === 'ok' ? '正常' : '异常'}</span>`).join(' ')
-    : state.pluginStoreLoading ? '<span class="form-note">正在加载插件源…</span>' : '<span class="form-note">还没有插件源，点击右上角“插件源”添加地址。</span>'
   const installedCards = plugins.length ? `<div class="entity-grid">${plugins.map(plugin => {
     const canTest = (plugin.capabilities || []).includes('notify.test')
     const id = escapeHtml(plugin.id)
-    return `<article class="entity-card"><div class="entity-head"><span class="entity-icon">${icon('plug')}</span><div class="entity-title"><h3>${escapeHtml(plugin.name || plugin.id)}</h3><p>${id} · v${escapeHtml(plugin.version || '—')}</p></div><span class="status-badge active">已加载</span></div><div class="entity-body"><p>${escapeHtml(plugin.description || '暂无插件说明')}</p><div>${(plugin.capabilities || []).map(value => `<span class="tag purple">${escapeHtml(value)}</span>`).join(' ')}</div></div><div class="entity-actions plugin-actions"><div class="plugin-action-group">${plugin.has_frontend ? `<button class="icon-button plugin-action" data-action="open-plugin" data-id="${id}" aria-label="打开插件页面" title="打开页面">${icon('chevron')}</button>` : ''}<button class="icon-button plugin-action" data-action="plugin-docs" data-id="${id}" aria-label="查看使用说明" title="使用说明">${icon('file')}</button><button class="icon-button plugin-action" data-action="plugin-logs" data-id="${id}" aria-label="查看插件日志" title="日志">${icon('terminal')}</button>${canTest ? `<button class="icon-button plugin-action" data-action="test-plugin" data-id="${id}" aria-label="测试通知" title="测试通知">${icon('send')}</button>` : ''}</div><button class="icon-button plugin-action" data-action="edit-plugin" data-id="${id}" aria-label="配置插件" title="配置">${icon('settings')}</button></div></article>`
+    return `<article class="entity-card"><div class="entity-head"><span class="entity-icon">${icon('plug')}</span><div class="entity-title"><h3>${escapeHtml(plugin.name || plugin.id)}</h3><p><span class="mono">${id}</span> · v${escapeHtml(plugin.version || '—')}</p></div><span class="status-badge ${plugin.running === false ? 'failed' : 'active'}">${plugin.running === false ? '已停止' : '运行中'}</span></div><div class="entity-body"><p class="clamp">${escapeHtml(plugin.description || '暂无插件说明')}</p><div class="tag-list">${(plugin.capabilities || []).map(value => `<span class="tag">${escapeHtml(value)}</span>`).join('')}</div></div><div class="entity-actions plugin-actions"><div class="plugin-action-group">${plugin.has_frontend ? `<button class="icon-button plugin-action" data-action="open-plugin" data-id="${id}" aria-label="打开插件页面" title="打开页面">${icon('chevron')}</button>` : ''}<button class="icon-button plugin-action" data-action="plugin-docs" data-id="${id}" aria-label="查看使用说明" title="使用说明">${icon('file')}</button><button class="icon-button plugin-action" data-action="plugin-logs" data-id="${id}" aria-label="查看插件日志" title="日志">${icon('terminal')}</button>${canTest ? `<button class="icon-button plugin-action" data-action="test-plugin" data-id="${id}" aria-label="测试通知" title="测试通知">${icon('send')}</button>` : ''}</div><button class="icon-button plugin-action" data-action="edit-plugin" data-id="${id}" aria-label="配置插件" title="配置">${icon('settings')}</button></div></article>`
   }).join('')}</div>`
-    : '<div class="empty-state"><p>当前没有已加载的可选插件</p></div>'
+    : `<div class="panel-empty">${state.query ? '没有匹配的已加载插件' : '当前没有已加载的插件'}</div>`
+  const installed = `<section class="entity-group"><h2 class="group-title">已加载插件<span>${plugins.length}</span></h2>${installedCards}</section>`
+  if (!sources.length && !state.pluginStoreLoading && !state.pluginStoreError) {
+    return `${installed}<div class="notice">${icon('plug')}<div><strong>插件商店</strong><p>添加插件源（公开的 JSON 索引地址）后，可以在这里在线安装和更新插件。</p></div><button class="button secondary small" data-action="manage-plugin-sources">添加插件源</button></div>`
+  }
   const storeCards = catalog.length ? `<div class="entity-grid">${catalog.map(plugin => {
     const action = plugin.update_available ? 'update-plugin' : plugin.installed ? '' : 'install-plugin'
     const label = plugin.update_available ? `更新到 v${plugin.version}` : plugin.installed ? '已是最新版' : '安装'
-    return `<article class="entity-card"><div class="entity-head"><span class="entity-icon">${icon('plug')}</span><div class="entity-title"><h3>${escapeHtml(plugin.name || plugin.id)}</h3><p>${escapeHtml(plugin.author || '第三方开发者')} · v${escapeHtml(plugin.version)}</p></div><span class="status-badge ${plugin.installed ? 'active' : 'pending'}">${plugin.update_available ? '可更新' : plugin.installed ? '已安装' : '未安装'}</span></div><div class="entity-body"><p>${escapeHtml(plugin.description || '暂无插件说明')}</p>${plugin.installed_version ? `<small>本地版本 v${escapeHtml(plugin.installed_version)}</small>` : ''}</div><div class="entity-actions">${action ? `<button class="button primary small" data-action="${action}" data-id="${escapeHtml(plugin.id)}" data-source="${escapeHtml(plugin.source_url)}">${label}</button>` : `<button class="button secondary small" disabled>${label}</button>`}<span class="spacer"></span>${plugin.installed ? `<button class="button danger small" data-action="uninstall-plugin" data-id="${escapeHtml(plugin.id)}">卸载</button>` : ''}</div></article>`
-  }).join('')}</div>` : state.pluginStoreLoading ? emptyState('plug', '正在加载插件商店', '已加载插件会先显示，插件库稍后自动刷新') : state.pluginStoreError ? emptyState('plug', '插件商店加载失败', state.pluginStoreError) : emptyState('plug', sources.length ? '插件源中没有匹配的插件' : '添加插件源后浏览插件库', sources.length ? '请检查插件源或尝试其他关键词' : '插件源是一个公开的 JSON 索引地址')
-  const storeStatus = state.pluginStoreLoading ? '<span class="tag">正在刷新</span>' : state.pluginStoreError ? '<span class="tag danger">加载失败</span>' : `<span class="tag purple">${catalog.length} 个插件</span>`
-  return `<div class="toolbar">${sourceSummary}</div><section class="panel"><header class="panel-header"><div><h2>插件商店</h2><p>在线安装和更新插件；单插件热切换，失败自动回滚</p></div>${storeStatus}</header><div class="panel-body">${storeCards}</div></section><section class="panel" style="margin-top:18px"><header class="panel-header"><div><h2>已加载插件</h2><p>由独立 Worker 运行的插件</p></div><span class="tag">${plugins.length} 个</span></header><div class="panel-body">${installedCards}</div></section>`
+    return `<article class="entity-card"><div class="entity-head"><span class="entity-icon">${icon('plug')}</span><div class="entity-title"><h3>${escapeHtml(plugin.name || plugin.id)}</h3><p>${escapeHtml(plugin.author || '第三方开发者')} · v${escapeHtml(plugin.version)}</p></div><span class="status-badge ${plugin.update_available ? 'pending' : plugin.installed ? 'active' : 'idle'}">${plugin.update_available ? '可更新' : plugin.installed ? '已安装' : '未安装'}</span></div><div class="entity-body"><p class="clamp">${escapeHtml(plugin.description || '暂无插件说明')}</p>${plugin.installed_version ? `<small>本地版本 v${escapeHtml(plugin.installed_version)}</small>` : ''}</div><div class="entity-actions">${action ? `<button class="button primary small" data-action="${action}" data-id="${escapeHtml(plugin.id)}" data-source="${escapeHtml(plugin.source_url)}">${label}</button>` : `<button class="button secondary small" disabled>${label}</button>`}<span class="spacer"></span>${plugin.installed ? `<button class="button danger small" data-action="uninstall-plugin" data-id="${escapeHtml(plugin.id)}">卸载</button>` : ''}</div></article>`
+  }).join('')}</div>` : state.pluginStoreLoading ? '<div class="panel-empty">正在加载插件商店…</div>' : state.pluginStoreError ? `<div class="panel-empty error">插件商店加载失败：${escapeHtml(state.pluginStoreError)}</div>` : '<div class="panel-empty">插件源中没有匹配的插件</div>'
+  const sourceTags = sources.map(source => `<span class="tag ${source.status === 'error' ? 'danger' : ''}" title="${escapeHtml(source.error || source.url)}">${escapeHtml(source.name)} · ${source.status === 'ok' ? '正常' : '异常'}</span>`).join('')
+  return `${installed}<section class="entity-group"><h2 class="group-title">插件商店<span>${catalog.length}</span>${sourceTags ? `<span class="group-tags">${sourceTags}</span>` : ''}</h2>${storeCards}</section>`
 }
 
 function loadPluginStore() {
@@ -586,15 +708,52 @@ function loadPluginStore() {
   })
 }
 
+const DELIVERY_STATUS_FILTERS = [['', '全部'], ['sent', '已送达'], ['failed', '失败'], ['retry', '等待重试'], ['pending', '排队中'], ['processing', '发送中']]
+
+function localDate(offsetDays = 0) {
+  const date = new Date(Date.now() - offsetDays * 86400000)
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`
+}
+
+function deliveryRange() {
+  const { date_from: from, date_to: to } = state.deliveryFilters
+  if (!from && !to) return ''
+  if (to && to !== localDate()) return 'custom'
+  return ({ [localDate()]: 'today', [localDate(6)]: '7d', [localDate(29)]: '30d' })[from] || 'custom'
+}
+
+function activeDeliveryFilters() {
+  return Object.values(state.deliveryFilters).filter(Boolean).length
+}
+
 function renderDeliveries() {
   const deliveries = state.deliveries.filter(item => matches(item.title, item.content, item.route_name, item.channel_name, item.last_error))
   const visible = deliveries.slice(0, state.deliveryVisible)
-  const filter = (key, placeholder) => `<input class="filter-input delivery-filter" data-filter="${key}" value="${escapeHtml(state.deliveryFilters[key])}" placeholder="${placeholder}">`
-  const toolbar = `<div class="toolbar"><select id="delivery-status" class="filter-select"><option value="">全部状态</option>${['sent', 'failed', 'retry', 'pending', 'processing'].map(status => `<option value="${status}" ${state.deliveryStatus === status ? 'selected' : ''}>${statusText(status)}</option>`).join('')}</select>${filter('route_id', '路由 ID')}${filter('channel_name', '渠道名称')}${filter('error', '失败原因')}<input type="date" class="filter-input delivery-filter" data-filter="date_from" value="${state.deliveryFilters.date_from}"><input type="date" class="filter-input delivery-filter" data-filter="date_to" value="${state.deliveryFilters.date_to}"><span class="tag">共 ${deliveries.length} 条</span></div>`
-  if (!deliveries.length) return toolbar + emptyState('history', state.query ? '没有匹配的投递记录' : '暂无投递记录', '新通知进入队列后会显示在这里')
+  if (state.deliveryFiltersOpen == null) state.deliveryFiltersOpen = !isMobileLayout() || activeDeliveryFilters() > 0
+  const filters = state.deliveryFilters
+  const option = (value, label, selected) => `<option value="${escapeHtml(value)}" ${selected === value ? 'selected' : ''}>${escapeHtml(label)}</option>`
+  const routeOptions = (state.config.routes || []).map(route => option(route.route_id, route.route_name || route.route_id, filters.route_id)).join('')
+  const channelOptions = (state.config.channels || []).map(channel => option(channel.name, channel.name, filters.channel_name)).join('')
+  const range = deliveryRange()
+  const rangeChip = (value, label) => `<button type="button" class="chip ${range === value ? 'active' : ''}" data-action="delivery-range" data-range="${value}">${label}</button>`
+  const active = activeDeliveryFilters()
+  const toolbar = `
+    <div class="filter-bar">
+      <div class="segmented" role="group" aria-label="按状态筛选">${DELIVERY_STATUS_FILTERS.map(([value, label]) => `<button type="button" class="${state.deliveryStatus === value ? 'active' : ''}" data-action="delivery-status" data-status="${value}" aria-pressed="${state.deliveryStatus === value}">${label}</button>`).join('')}</div>
+      <button type="button" class="button secondary small filter-toggle ${state.deliveryFiltersOpen ? 'open' : ''}" data-action="toggle-delivery-filters" aria-expanded="${state.deliveryFiltersOpen}">${icon('filter')}筛选${active ? `<b>${active}</b>` : ''}</button>
+    </div>
+    <div class="filter-panel" ${state.deliveryFiltersOpen ? '' : 'hidden'}>
+      <label class="mini-field"><span>路由</span><select class="delivery-filter" data-filter="route_id">${option('', '全部路由', filters.route_id)}${routeOptions}${filters.route_id && !(state.config.routes || []).some(route => route.route_id === filters.route_id) ? option(filters.route_id, filters.route_id, filters.route_id) : ''}</select></label>
+      <label class="mini-field"><span>渠道</span><select class="delivery-filter" data-filter="channel_name">${option('', '全部渠道', filters.channel_name)}${channelOptions}</select></label>
+      <label class="mini-field"><span>失败原因</span><input class="delivery-filter" data-filter="error" value="${escapeHtml(filters.error)}" placeholder="包含关键词，回车搜索"></label>
+      <div class="mini-field wide"><span>时间范围</span><div class="range-row"><div class="chips">${rangeChip('today', '今天')}${rangeChip('7d', '近 7 天')}${rangeChip('30d', '近 30 天')}${rangeChip('', '不限')}</div><div class="date-range"><input type="date" class="delivery-filter" data-filter="date_from" value="${escapeHtml(filters.date_from)}" aria-label="开始日期"><span>至</span><input type="date" class="delivery-filter" data-filter="date_to" value="${escapeHtml(filters.date_to)}" aria-label="结束日期"></div></div></div>
+      ${active ? '<button type="button" class="text-link clear-filters" data-action="clear-delivery-filters">清除筛选</button>' : ''}
+    </div>
+    <p class="result-meta">共 ${formatNumber(deliveries.length)} 条${deliveries.length >= 300 ? '（最多显示最近 300 条）' : ''}</p>`
+  if (!deliveries.length) return toolbar + emptyState('history', state.query || active || state.deliveryStatus ? '没有匹配的投递记录' : '暂无投递记录', state.query || active || state.deliveryStatus ? '调整筛选条件后再试' : '新通知进入队列后会显示在这里')
   const controls = deliveries.length > DELIVERY_BATCH_SIZE ? `<div class="delivery-history-actions">${state.deliveryVisible < deliveries.length ? '<button class="button secondary" data-action="load-more-deliveries">加载更多</button>' : ''}${state.deliveryVisible > DELIVERY_BATCH_SIZE ? '<button class="button secondary" data-action="collapse-deliveries">收起历史</button>' : ''}</div>` : ''
-  return `${toolbar}<div class="table-wrap"><table class="data-table"><thead><tr><th>消息</th><th>通道 → 渠道</th><th>状态</th><th>尝试</th><th>时间</th><th>操作</th></tr></thead><tbody>${visible.map(item => `
-    <tr><td data-label="消息"><div class="cell-title"><strong class="truncate">${escapeHtml(item.title || '无标题')}</strong><small class="truncate">${escapeHtml(item.content || '')}</small></div></td><td data-label="投递链路">${escapeHtml(item.route_name)} → ${escapeHtml(item.channel_name)}</td><td data-label="状态"><span class="status-badge ${escapeHtml(item.status)}">${escapeHtml(statusText(item.status))}</span></td><td data-label="尝试">${escapeHtml(item.attempts || 0)}</td><td data-label="时间">${escapeHtml(formatDate(item.updated_at || item.outbox_created_at))}</td><td data-label="操作"><div class="inline-actions"><button class="icon-button" data-action="delivery-detail" data-id="${item.id}" aria-label="查看详情">${icon('more')}</button>${item.status === 'failed' ? `<button class="icon-button" data-action="retry-delivery" data-id="${item.id}" aria-label="重试">${icon('refresh')}</button>` : ''}</div></td></tr>`).join('')}</tbody></table></div>`
+  return `${toolbar}<div class="table-wrap"><table class="data-table delivery-table"><thead><tr><th>消息</th><th>路由 → 渠道</th><th>状态</th><th>尝试</th><th>时间</th><th><span class="sr-only">操作</span></th></tr></thead><tbody>${visible.map(item => `
+    <tr class="clickable" data-action="delivery-detail" data-id="${item.id}"><td class="cell-primary" data-label="消息"><div class="cell-title"><strong class="truncate">${escapeHtml(item.title || '无标题')}</strong>${item.status === 'failed' || item.status === 'retry' ? `<small class="truncate error-text">${escapeHtml(item.last_error || '发送失败')}</small>` : `<small class="truncate">${escapeHtml(item.content || '')}</small>`}</div></td><td data-label="链路"><span class="truncate">${escapeHtml(item.route_name)} → ${escapeHtml(item.channel_name)}</span></td><td data-label="状态"><span class="status-badge ${escapeHtml(item.status)}">${escapeHtml(statusText(item.status))}</span></td><td data-label="尝试" class="num">${escapeHtml(item.attempts || 0)}</td><td data-label="时间" title="${escapeHtml(formatDate(item.updated_at || item.outbox_created_at))}">${escapeHtml(relativeTime(item.updated_at || item.outbox_created_at))}</td><td class="cell-actions" data-label="操作"><div class="inline-actions">${item.status === 'failed' ? `<button class="icon-button" data-action="retry-delivery" data-id="${item.id}" aria-label="重新发送" title="重新发送">${icon('refresh')}</button>` : ''}<span class="row-chevron">${icon('chevron')}</span></div></td></tr>`).join('')}</tbody></table></div>`
     + controls
 }
 
@@ -616,12 +775,43 @@ function renderSettings() {
   }).join('') : '<div class="appearance-empty">尚未上传背景图</div>'
   const slider = (key, label, value) => `<label class="appearance-slider"><span>${label}</span><output id="${key}-value">${escapeHtml(value)}%</output><input id="${key}" data-appearance-setting type="range" min="0" max="100" value="${escapeHtml(value)}"></label>`
   return `<div class="settings-grid">
-    <section class="panel"><header class="panel-header"><div><h2>站点设置</h2><p>管理后台的基础信息</p></div><button class="button secondary small" data-action="edit-settings">${icon('edit')}编辑</button></header><div class="panel-body settings-list"><div class="info-row"><span>应用名称</span><strong>${escapeHtml(app.app_name || 'Notify')}</strong></div><div class="info-row"><span>站点地址</span><strong>${escapeHtml(app.site_url || location.origin)}</strong></div><div class="info-row"><span>记录保留</span><strong>${escapeHtml(app.record_retention_days || 90)} 天</strong></div><div class="info-row"><span>GitHub Token</span><code class="code">${escapeHtml(app.github_token || '未配置')}</code></div></div></section>
+    <section class="panel"><header class="panel-header"><div><h2>站点设置</h2><p>管理后台的基础信息</p></div><button class="button secondary small" data-action="edit-settings">${icon('edit')}编辑</button></header><div class="panel-body settings-list"><div class="info-row"><span>应用名称</span><strong>${escapeHtml(app.app_name || 'Notify')}</strong></div><div class="info-row"><span>站点地址</span><strong>${escapeHtml(app.site_url || location.origin)}</strong></div><div class="info-row"><span>记录保留</span><strong>${escapeHtml(app.record_retention_days || 90)} 天</strong></div><div class="info-row"><span>GitHub Token</span><span class="${app.github_token ? 'tag purple' : 'tag'}">${escapeHtml(maskSecret(app.github_token))}</span></div></div></section>
     <section class="panel"><header class="panel-header"><div><h2>管理员安全</h2><p>修改管理后台登录密码</p></div><button class="button secondary small" data-action="change-password">${icon('settings')}修改密码</button></header><div class="panel-body settings-list"><div class="info-row"><span>当前账户</span><strong>${escapeHtml(state.session?.username || 'admin')}</strong></div><div class="info-row"><span>密码状态</span><span class="status-badge ${state.status.password_change_required ? 'pending' : 'active'}">${state.status.password_change_required ? '需要修改' : '已设置'}</span></div><p class="form-note">密码会保存到数据目录，修改后立即生效，并使其他登录会话失效。</p></div></section>
     <section class="panel settings-wide appearance-settings"><header class="panel-header"><div><h2>外观</h2><p>首页背景与界面质感</p></div></header><div class="panel-body"><div class="appearance-remote"><div><h3>随机图接口</h3><p>每次刷新页面重新请求一张背景图，不会下载到 Notify 容器。</p></div><div class="appearance-remote-control"><label class="field"><span>图片接口 URL</span><input id="random-background-url" type="url" value="${escapeHtml(randomBackgroundUrl)}" placeholder="https://t.alcy.cc/pc" autocomplete="off"><small>仅支持无账号密码的 HTTP 或 HTTPS 地址</small></label><button class="button primary" data-action="save-random-background" type="button">${randomBackgroundUrl ? '更新接口' : '启用随机图'}</button></div></div><div class="appearance-divider"><span>或使用已上传图片</span></div><h3>本地背景图库</h3><p class="form-note">建议使用 16:9 的高分辨率横图。图片保存在服务端图库中，最多保留 20 张；点选即可切换，同一实例的其他设备也会使用该设置。</p><div class="appearance-gallery">${gallery}</div><div class="appearance-actions"><button class="button secondary" data-action="upload-background" type="button">${icon('upload')}上传背景图</button><button class="button danger" data-action="clear-background" type="button">使用默认背景</button></div></div></section>
     <section class="panel settings-wide appearance-texture"><header class="panel-header"><div><h2>界面质感</h2><p>调整液态玻璃卡片的透明度、明暗与模糊效果</p></div></header><div class="panel-body">${slider('glass-opacity', '玻璃透明度', appearance.appearance_glass_opacity ?? 50)}${slider('glass-brightness', '玻璃明暗', appearance.appearance_glass_brightness ?? 45)}${slider('glass-blur', '玻璃折射与模糊', appearance.appearance_glass_blur ?? 10)}${slider('mask-opacity', '页面明暗', appearance.appearance_mask_opacity ?? 50)}<div class="appearance-footer"><span class="form-note">保存后跨设备生效</span><button class="button danger" data-action="reset-appearance" type="button">恢复默认</button><button class="button primary" data-action="save-appearance" type="button">保存</button></div></div></section>
-    <section class="panel settings-wide"><header class="panel-header"><div><h2>运行信息</h2><p>当前实例状态</p></div><span class="status-badge active">正常</span></header><div class="panel-body settings-list"><div class="info-row"><span>系统版本</span><code class="code">v${escapeHtml(state.status.version)}</code></div><div class="info-row"><span>通知渠道</span><strong>${state.status.channels}</strong></div><div class="info-row"><span>通知通道</span><strong>${state.status.routes}</strong></div><div class="info-row"><span>插件任务</span><span class="status-badge ${state.status.plugin_tasks ? 'active' : 'inactive'}">${state.status.plugin_tasks ? '运行中' : '已暂停'}</span></div><div class="info-row"><span>API 文档</span><a class="code" href="/docs" target="_blank" rel="noopener">/docs</a></div></div></section>
+    <section class="panel settings-wide"><header class="panel-header"><div><h2>运行信息</h2><p>当前实例状态</p></div><span class="status-badge ${state.health?.status === 'ok' ? 'active' : 'failed'}">${state.health?.status === 'ok' ? '正常' : '异常'}</span></header><div class="panel-body settings-list"><div class="info-row"><span>系统版本</span><code class="code">v${escapeHtml(state.status.version)}</code></div><div class="info-row"><span>通知渠道</span><strong>${state.status.channels}</strong></div><div class="info-row"><span>通知路由</span><strong>${state.status.routes}</strong></div><div class="info-row"><span>投递线程</span><span class="status-badge ${state.health?.worker?.healthy ? 'active' : 'failed'}">${state.health?.worker?.healthy ? `运行中 · ${escapeHtml(state.health.worker.heartbeat_age)}s 前心跳` : '未响应'}</span></div><div class="info-row"><span>插件任务</span><span class="status-badge ${state.status.plugin_tasks ? 'active' : 'inactive'}">${state.status.plugin_tasks ? '运行中' : '已暂停'}</span></div><div class="info-row"><span>API 文档</span><a class="code" href="/docs" target="_blank" rel="noopener">/docs</a></div></div></section>
   </div>`
+}
+
+function errorState(message) {
+  return `<div class="empty-state error-state">${icon('alert')}<div><h3>数据加载失败</h3><p>${escapeHtml(message || '无法连接 Notify 服务')}</p><button class="button secondary small" data-action="reload-data">${icon('refresh')}重新加载</button></div></div>`
+}
+
+function setServiceState(ok, text) {
+  const label = text || (ok ? '服务正常' : '服务异常')
+  $('#service-pill')?.classList.toggle('down', !ok)
+  $('#sidebar-status')?.classList.toggle('down', !ok)
+  if ($('#service-pill-text')) $('#service-pill-text').textContent = label
+  if ($('#sidebar-status-text')) $('#sidebar-status-text').textContent = ok ? '服务运行正常' : label
+  $('.sidebar-status')?.setAttribute('title', label)
+}
+
+async function refreshHealth() {
+  try {
+    const response = await fetch('/healthz', { cache: 'no-store' })
+    const data = await response.json().catch(() => ({}))
+    state.health = data
+    setServiceState(response.ok, response.ok ? '服务正常' : '投递线程异常')
+  } catch {
+    state.health = null
+    setServiceState(false, '无法连接服务')
+  }
+}
+
+function maskSecret(value) {
+  const text = String(value || '')
+  if (!text) return '未配置'
+  return `已设置 ··${text.slice(-4)}`
 }
 
 function emptyState(iconName, title, description) {
@@ -666,6 +856,7 @@ function openModal({ eyebrow = '通知管理', title, body, submitText = '保存
   $('#modal-submit').classList.add('primary')
   $('#modal-submit').classList.remove('danger')
   $('#modal-submit').hidden = noSubmit
+  $('#modal-footer [data-action="close-modal"]').textContent = noSubmit ? '关闭' : '取消'
   state.modalSubmit = onSubmit
   if (!modal.open) modal.showModal()
   requestAnimationFrame(() => $('#modal-body input:not([type="hidden"]), #modal-body select, #modal-body textarea, #modal-submit')?.focus())
@@ -755,22 +946,22 @@ function openRouteForm(route = null) {
   const channels = (state.config.channels || []).map(channel => `<label class="choice"><input type="checkbox" name="channel_name" value="${escapeHtml(channel.name)}" ${(original.channel_name || []).includes(channel.name) ? 'checked' : ''}>${escapeHtml(channel.name)}</label>`).join('')
   const templates = state.templates.map(template => `<label class="choice"><input type="checkbox" name="template_name" value="${escapeHtml(template.name)}" ${(original.bind_template || []).includes(template.name) ? 'checked' : ''}>${escapeHtml(template.name)}</label>`).join('')
   openModal({
-    eyebrow: route ? '编辑通知通道' : '新增通知通道', title: route ? original.route_name : '创建通知通道', wide: true,
-    body: `<div class="field-row">${formField('route_name', '通道名称', 'text', original.route_name, '例如：VoHive 短信')}${formField('route_id', '通道 ID', 'text', original.route_id, 'route_xxxx', '接口调用使用的唯一 ID')}</div>${formField('push_img', '默认通知图片', 'url', original.push_img || '', 'https://...', '发送方未提供图片时使用此地址')}${formField('active', '启用通道', 'checkbox', original.active !== false, '', '关闭后该通道将拒绝新的推送请求')}<div class="form-section"><h3 class="form-section-title">发送渠道</h3><div class="multi-select">${channels || '请先创建通知渠道'}</div></div><div class="form-section"><h3 class="form-section-title">绑定模板</h3><div class="multi-select">${templates || '暂无模板；不绑定时直接透传标题和内容'}</div><p class="preview-note">PVE、Emby 和 Watchtower 事件会根据事件类型选择绑定模板，普通推送可不绑定。</p></div>`,
+    eyebrow: route ? '编辑通知路由' : '新增通知路由', title: route ? original.route_name : '创建通知路由', wide: true,
+    body: `<div class="field-row">${formField('route_name', '路由名称', 'text', original.route_name, '例如：VoHive 短信')}${formField('route_id', '路由 ID', 'text', original.route_id, 'route_xxxx', '推送接口使用的唯一 ID，修改后旧地址立即失效')}</div>${formField('push_img', '默认通知图片', 'url', original.push_img || '', 'https://...', '发送方未提供图片时使用此地址')}${formField('active', '启用路由', 'checkbox', original.active !== false, '', '关闭后该路由将拒绝新的推送请求')}<div class="form-section"><h3 class="form-section-title">发送渠道</h3><div class="multi-select">${channels || '请先创建通知渠道'}</div></div><div class="form-section"><h3 class="form-section-title">绑定模板</h3><div class="multi-select">${templates || '暂无模板；不绑定时直接透传标题和内容'}</div><p class="preview-note">PVE、Emby 和 Watchtower 事件会根据事件类型选择绑定模板，普通推送可不绑定。</p></div>`,
     onSubmit: async form => {
       const data = new FormData(form)
       const routeName = String(data.get('route_name') || '').trim()
       const routeId = String(data.get('route_id') || '').trim()
       const channelNames = data.getAll('channel_name').map(String)
-      if (!routeName || !routeId) throw new Error('通道名称和 ID 不能为空')
+      if (!routeName || !routeId) throw new Error('路由名称和 ID 不能为空')
       if (!channelNames.length) throw new Error('至少选择一个发送渠道')
-      if ((state.config.routes || []).some(item => item.route_id === routeId && item.route_id !== route?.route_id)) throw new Error('通道 ID 已存在')
+      if ((state.config.routes || []).some(item => item.route_id === routeId && item.route_id !== route?.route_id)) throw new Error('路由 ID 已存在')
       const next = { ...original, route_name: routeName, route_id: routeId, channel_name: channelNames, bind_template: data.getAll('template_name').map(String), push_img: String(data.get('push_img') || '').trim(), active: data.has('active') }
       const routes = [...(state.config.routes || [])]
       const index = routes.findIndex(item => item.route_id === route?.route_id)
       if (index >= 0) routes[index] = next
       else routes.push(next)
-      await saveConfig({ ...state.config, routes }, route ? '通道已更新' : '通道已创建')
+      await saveConfig({ ...state.config, routes }, route ? '路由已更新' : '路由已创建')
     },
   })
 }
@@ -812,7 +1003,7 @@ function openTemplateForm(template = null) {
   }
   openModal({
     eyebrow: template ? '编辑通知模板' : '新增通知模板', title: template ? original.name : '创建通知模板', wide: true,
-    body: `<div class="dialog-grid"><div><div class="field-row">${formField('name', '模板名称', 'text', original.name, '例如：短信通知')}<label class="field"><span>事件类型</span><select name="type_choice">${typeOptions}<option value="__custom__" ${knownType ? '' : 'selected'}>自定义事件类型</option></select><input name="type_custom" type="text" value="${escapeHtml(knownType ? '' : original.type)}" placeholder="例如：MyService.Alert" autocomplete="off" ${knownType ? 'hidden' : ''}><small>内置事件按模块分组显示；也可以选择“自定义事件类型”手动输入。</small></label></div>${formField('description', '模板说明', 'text', original.description || '', '说明这个模板的使用场景')}${formField('title', '通知标题', 'textarea', original.title || '')}${formField('content', '通知内容', 'textarea', original.content || '')}<p class="form-note">保持现有 Jinja 模板变量不变，例如 <code>{{ device_name }}</code>。变量由实际推送来源填充。</p></div><aside class="preview-pane"><p class="eyebrow">News 实时预览</p><div class="news-preview"><div class="news-image">${icon('bell')}</div><div class="news-copy"><h3 id="preview-title">${escapeHtml(renderTemplateExample(original.title, selectedType) || '通知标题')}</h3><p id="preview-content">${escapeHtml(renderTemplateExample(original.content, selectedType) || '通知内容')}</p></div></div><p class="preview-note">这是企业微信 News 卡片的内容结构预览；图片和链接来自通道或推送请求。</p></aside></div>`,
+    body: `<div class="dialog-grid"><div><div class="field-row">${formField('name', '模板名称', 'text', original.name, '例如：短信通知')}<label class="field"><span>事件类型</span><select name="type_choice">${typeOptions}<option value="__custom__" ${knownType ? '' : 'selected'}>自定义事件类型</option></select><input name="type_custom" type="text" value="${escapeHtml(knownType ? '' : original.type)}" placeholder="例如：MyService.Alert" autocomplete="off" ${knownType ? 'hidden' : ''}><small>内置事件按模块分组显示；也可以选择“自定义事件类型”手动输入。</small></label></div>${formField('description', '模板说明', 'text', original.description || '', '说明这个模板的使用场景')}${formField('title', '通知标题', 'textarea', original.title || '')}${formField('content', '通知内容', 'textarea', original.content || '')}<p class="form-note">保持现有 Jinja 模板变量不变，例如 <code>{{ device_name }}</code>。变量由实际推送来源填充。</p></div><aside class="preview-pane"><p class="eyebrow">News 实时预览</p><div class="news-preview"><div class="news-image">${icon('bell')}</div><div class="news-copy"><h3 id="preview-title">${escapeHtml(renderTemplateExample(original.title, selectedType) || '通知标题')}</h3><p id="preview-content">${escapeHtml(renderTemplateExample(original.content, selectedType) || '通知内容')}</p></div></div><p class="preview-note">这是企业微信 News 卡片的内容结构预览；图片和链接来自路由或推送请求。</p></aside></div>`,
     onSubmit: async form => {
       const data = new FormData(form)
       const name = String(data.get('name') || '').trim()
@@ -965,15 +1156,15 @@ async function openPluginTest(plugin) {
   const selected = config.route_id || config.notify_route || config.notify_route_id || (routes.length === 1 ? routes[0].route_id : '')
   openModal({
     eyebrow: '插件通知测试', title: `测试 · ${plugin.name || plugin.id}`,
-    body: `${formField('route_id', '通知通道', 'select', selected, '', '模拟插件事件并通过真实通知通道发送。', routeOptions)}${formField('title', '通知标题', 'text', `[测试] ${plugin.name || plugin.id}`)}${formField('content', '通知内容', 'textarea', '这是一条来自插件的测试通知，用于验证插件配置的通知通道。')}`,
+    body: `${formField('route_id', '通知路由', 'select', selected, '', '模拟插件事件并通过真实通知路由发送。', routeOptions)}${formField('title', '通知标题', 'text', `[测试] ${plugin.name || plugin.id}`)}${formField('content', '通知内容', 'textarea', '这是一条来自插件的测试通知，用于验证插件配置的通知路由。')}`,
     submitText: '发送测试通知',
     onSubmit: async form => {
       const data = new FormData(form)
       const routeId = String(data.get('route_id') || '').trim()
-      if (!routeId) throw new Error('请选择通知通道')
+      if (!routeId) throw new Error('请选择通知路由')
       const result = await api(`/api/admin/plugins/${encodeURIComponent(plugin.id)}/test`, { method: 'POST', body: JSON.stringify({ route_id: routeId, title: data.get('title'), content: data.get('content') }) })
       closeModal()
-      toast('测试通知已加入队列', `通道：${result.route_id}`)
+      toast('测试通知已加入队列', `路由：${result.route_id}`)
       setTimeout(async () => { await loadCore(); if (currentPage() === 'deliveries') renderCurrent() }, 800)
     },
   })
@@ -1124,9 +1315,19 @@ function openTestChannel(channel) {
 }
 
 function openDeliveryDetail(item) {
+  if (!item) return
+  const failed = item.status === 'failed'
+  const nextAttempt = item.status === 'retry' && item.next_attempt_at ? new Date(Number(item.next_attempt_at) * 1000).toLocaleString('zh-CN', { hour12: false }) : ''
   openModal({
-    eyebrow: `投递 #${item.id}`, title: item.title || '无标题通知', noSubmit: true, wide: true,
-    body: `<div class="field-row three"><div class="info-row"><span>状态</span><span class="status-badge ${escapeHtml(item.status)}">${escapeHtml(statusText(item.status))}</span></div><div class="info-row"><span>尝试次数</span><strong>${escapeHtml(item.attempts || 0)}</strong></div><div class="info-row"><span>更新时间</span><strong>${escapeHtml(formatDate(item.updated_at))}</strong></div></div><div class="form-section"><h3 class="form-section-title">投递链路</h3><p>${escapeHtml(item.route_name)} <span class="code">${escapeHtml(item.route_id)}</span> → ${escapeHtml(item.channel_name)}</p></div><div class="form-section"><h3 class="form-section-title">消息内容</h3><div class="form-note" style="white-space:pre-wrap">${escapeHtml(item.content || '')}</div></div>${item.last_error ? `<div class="form-section"><h3 class="form-section-title">失败原因</h3><div class="form-note" style="color:var(--red);white-space:pre-wrap">${escapeHtml(item.last_error)}</div></div>` : ''}${item.push_img_url || item.push_link_url ? `<div class="form-section"><h3 class="form-section-title">附加内容</h3><p>${item.push_img_url ? `图片：${escapeHtml(item.push_img_url)}<br>` : ''}${item.push_link_url ? `链接：${escapeHtml(item.push_link_url)}` : ''}</p></div>` : ''}`,
+    eyebrow: `投递 #${item.id}`, title: item.title || '无标题通知', wide: true,
+    noSubmit: !failed, submitText: '重新发送',
+    onSubmit: failed ? async () => {
+      await api(`/api/admin/deliveries/${item.id}/retry`, { method: 'POST' })
+      closeModal()
+      toast('已重新加入发送队列')
+      await renderPage()
+    } : null,
+    body: `<div class="detail-grid"><div class="info-row"><span>状态</span><span class="status-badge ${escapeHtml(item.status)}">${escapeHtml(statusText(item.status))}</span></div><div class="info-row"><span>尝试次数</span><strong>${escapeHtml(item.attempts || 0)}</strong></div><div class="info-row"><span>创建时间</span><strong>${escapeHtml(formatDate(item.outbox_created_at || item.created_at))}</strong></div><div class="info-row"><span>${nextAttempt ? '下次重试' : '更新时间'}</span><strong>${escapeHtml(nextAttempt || formatDate(item.updated_at))}</strong></div></div>${item.last_error ? `<div class="form-section"><h3 class="form-section-title">失败原因</h3><pre class="error-block">${escapeHtml(item.last_error)}</pre></div>` : ''}<div class="form-section"><h3 class="form-section-title">投递链路</h3><p class="route-line"><strong>${escapeHtml(item.route_name)}</strong> <code class="mono">${escapeHtml(item.route_id)}</code> ${icon('chevron')} <strong>${escapeHtml(item.channel_name)}</strong></p></div><div class="form-section"><h3 class="form-section-title">消息内容</h3><div class="message-preview large"><strong>${escapeHtml(item.title || '无标题')}</strong><p>${escapeHtml(item.content || '')}</p></div></div>${item.push_img_url || item.push_link_url ? `<div class="form-section"><h3 class="form-section-title">附加内容</h3><div class="kv">${item.push_img_url ? `<div class="kv-row"><dt>图片</dt><dd class="wrap">${escapeHtml(item.push_img_url)}</dd></div>` : ''}${item.push_link_url ? `<div class="kv-row"><dt>链接</dt><dd class="wrap">${escapeHtml(item.push_link_url)}</dd></div>` : ''}</div></div>` : ''}`,
   })
 }
 
@@ -1254,7 +1455,7 @@ async function handleAction(action, target) {
     const route = state.config.routes.find(item => item.route_id === target.dataset.id)
     const base = (state.config.app?.site_url || location.origin).replace(/\/$/, '')
     const endpoint = `${base}/api/service/notify/${encodeURIComponent(route.route_id)}/{title}/{content}`
-    return confirmModal('删除通知通道', `确定删除“${route.route_name}”吗？现有调用地址将立即失效。\n\n调用地址：${endpoint}`, async () => saveConfig({ ...state.config, routes: state.config.routes.filter(item => item.route_id !== route.route_id) }, '通道已删除'), true)
+    return confirmModal('删除通知路由', `确定删除“${route.route_name}”吗？现有调用地址将立即失效。\n\n调用地址：${endpoint}`, async () => saveConfig({ ...state.config, routes: state.config.routes.filter(item => item.route_id !== route.route_id) }, '路由已删除'), true)
   }
   if (action === 'copy-route') {
     const base = (state.config.app?.site_url || location.origin).replace(/\/$/, '')
@@ -1297,6 +1498,30 @@ async function handleAction(action, target) {
     return renderPage()
   }
   if (action === 'delivery-detail') return openDeliveryDetail(state.deliveries.find(item => String(item.id) === String(target.dataset.id)))
+  if (action === 'dashboard-delivery') return openDeliveryDetail((state.status.deliveries || []).find(item => String(item.id) === String(target.dataset.id)))
+  if (action === 'reload-data') {
+    await loadCore()
+    await renderPage()
+    return
+  }
+  if (action === 'delivery-status') {
+    state.deliveryStatus = target.dataset.status || ''
+    return renderPage()
+  }
+  if (action === 'toggle-delivery-filters') {
+    state.deliveryFiltersOpen = !state.deliveryFiltersOpen
+    return renderCurrent()
+  }
+  if (action === 'delivery-range') {
+    const days = { today: 0, '7d': 6, '30d': 29 }[target.dataset.range]
+    state.deliveryFilters.date_from = days == null ? '' : localDate(days)
+    state.deliveryFilters.date_to = ''
+    return renderPage()
+  }
+  if (action === 'clear-delivery-filters') {
+    state.deliveryFilters = { route_id: '', channel_name: '', error: '', date_from: '', date_to: '' }
+    return renderPage()
+  }
   if (action === 'load-more-deliveries') { state.deliveryVisible += DELIVERY_BATCH_SIZE; return renderCurrent() }
   if (action === 'collapse-deliveries') { state.deliveryVisible = DELIVERY_BATCH_SIZE; return renderCurrent() }
   if (action === 'edit-settings') return openSettingsForm()
@@ -1423,10 +1648,6 @@ document.addEventListener('input', event => {
 })
 
 document.addEventListener('change', event => {
-  if (event.target.id === 'delivery-status') {
-    state.deliveryStatus = event.target.value
-    renderPage().catch(reason => toast('加载失败', reason.message, 'error'))
-  }
   if (event.target.matches('.delivery-filter')) { state.deliveryFilters[event.target.dataset.filter] = event.target.value; renderPage().catch(reason => toast('加载失败', reason.message, 'error')) }
 })
 
